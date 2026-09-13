@@ -29,7 +29,14 @@ public sealed class GrayscaleProcessor : IConfigurableImageProcessor, IDisposabl
 
     public int Order => ProcessorOrder.Grayscale;
 
+    public string SettingsId => "flyerflipper.grayscale";
+
     public event EventHandler? SettingsChanged;
+
+    public string GetSettingsJson() => _settings.ToJson(ProcessorOptionsJsonContext.Default.GrayscaleOptions);
+
+    public bool TryApplySettingsJson(string json)
+        => _settings.TryUpdateFromJson(json, ProcessorOptionsJsonContext.Default.GrayscaleOptions);
 
     public ProcessedImage Process(ProcessedImage input, CancellationToken cancellationToken)
     {

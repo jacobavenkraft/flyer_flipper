@@ -38,7 +38,9 @@ internal sealed class AppHarness : IDisposable
         Catalog = new ImageCatalog(_source.Object);
         Layout = new LayoutModeService();
         Viewport = new ViewportModeService(Catalog);
-        Pipeline = new ImageProcessingPipeline([new GrayscaleProcessor(GrayscaleSettings), new ResizeProcessor(ResizeSettings)]);
+        Grayscale = new GrayscaleProcessor(GrayscaleSettings);
+        Resize = new ResizeProcessor(ResizeSettings);
+        Pipeline = new ImageProcessingPipeline([Grayscale, Resize]);
         Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, Pipeline, new SkiaThumbnailService(), new AvaloniaBitmapFactory());
         ImageSource = new ImageSourceViewModel(Catalog);
         Grid = new ThumbnailGridViewModel(Store, Layout, Viewport);
@@ -50,6 +52,10 @@ internal sealed class AppHarness : IDisposable
     public ProcessorSettings<GrayscaleOptions> GrayscaleSettings { get; } = new(new GrayscaleOptions());
 
     public ProcessorSettings<ResizeOptions> ResizeSettings { get; } = new(new ResizeOptions());
+
+    public GrayscaleProcessor Grayscale { get; }
+
+    public ResizeProcessor Resize { get; }
 
     public ImageProcessingPipeline Pipeline { get; }
 
@@ -83,11 +89,15 @@ internal sealed class AppHarness : IDisposable
         return Window;
     }
 
-    public async Task LoadFolderAsync(int imageCount)
-    {
-        _images = Enumerable.Range(0, imageCount)
+    /// <summary>Sets what the fake source returns for any folder, without loading it.</summary>
+    public void SetImages(int imageCount)
+        => _images = Enumerable.Range(0, imageCount)
             .Select(i => new ImageReference(Path.Combine(Folder, $"image{i:D2}.png")))
             .ToArray();
+
+    public async Task LoadFolderAsync(int imageCount)
+    {
+        SetImages(imageCount);
         ImageSource.FolderPath = Folder;
         await ImageSource.LoadFolderCommand.ExecuteAsync(null);
         Dispatcher.UIThread.RunJobs();

@@ -29,4 +29,22 @@ public sealed partial class ProcessorTabHostViewModel : ObservableObject
         => _tabs ??= _providers.Select(static p => new ProcessorTab(p.Header, p.CreateControl())).ToArray();
 
     public bool HasTabs => _providers.Count > 0;
+
+    /// <summary>Header of the selected tab, or null when there is none. Persisted by name (decision 16g).</summary>
+    public string? SelectedHeader => (uint)SelectedIndex < (uint)_providers.Count ? _providers[SelectedIndex].Header : null;
+
+    /// <summary>Selects the tab with <paramref name="header"/>; returns false (selection unchanged) if there is none.</summary>
+    public bool SelectTab(string header)
+    {
+        for (var i = 0; i < _providers.Count; i++)
+        {
+            if (string.Equals(_providers[i].Header, header, StringComparison.Ordinal))
+            {
+                SelectedIndex = i;
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

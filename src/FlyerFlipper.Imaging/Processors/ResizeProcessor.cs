@@ -23,7 +23,14 @@ public sealed class ResizeProcessor : IConfigurableImageProcessor, IDisposable
 
     public int Order => ProcessorOrder.Resize;
 
+    public string SettingsId => "flyerflipper.resize";
+
     public event EventHandler? SettingsChanged;
+
+    public string GetSettingsJson() => _settings.ToJson(ProcessorOptionsJsonContext.Default.ResizeOptions);
+
+    public bool TryApplySettingsJson(string json)
+        => _settings.TryUpdateFromJson(json, ProcessorOptionsJsonContext.Default.ResizeOptions);
 
     public ProcessedImage Process(ProcessedImage input, CancellationToken cancellationToken)
     {

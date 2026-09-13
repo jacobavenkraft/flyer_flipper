@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+
 namespace FlyerFlipper.Core.Pipeline;
 
 /// <summary>
@@ -33,5 +36,35 @@ public sealed class ProcessorSettings<TOptions>
 
         Volatile.Write(ref _current, options);
         Changed?.Invoke(this, options);
+    }
+
+    /// <summary>Serializes <see cref="Current"/> with source-generated (AOT-safe) metadata.</summary>
+    public string ToJson(JsonTypeInfo<TOptions> typeInfo)
+        => JsonSerializer.Serialize(Current, typeInfo);
+
+    /// <summary>
+    /// Deserializes options from <paramref name="json"/> and applies them. Returns false, changing nothing,
+    /// when the JSON is malformed, empty, or rejected by the options type's validation.
+    /// </summary>
+    public bool TryUpdateFromJson(string json, JsonTypeInfo<TOptions> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+        TOptions? options;
+        try
+        {
+            options = JsonSerializer.Deserialize(json, typeInfo);
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or NotSupportedException or InvalidOperationException)
+        {
+            return false;
+        }
+
+        if (options is null)
+        {
+            return false;
+        }
+
+        Update(options);
+        return true;
     }
 }

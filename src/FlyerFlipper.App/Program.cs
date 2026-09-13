@@ -27,7 +27,8 @@ internal static class Program
         builder.Services.AddSingleton<IViewportModeService, ViewportModeService>();
         builder.Services.AddSingleton<IImageProcessingPipeline, ImageProcessingPipeline>();
         builder.Services.AddSingleton<IApplicationShutdown, AvaloniaApplicationShutdown>();
-        builder.Services.AddFlyerFlipperInfrastructure();
+        // Optional "--settings-path <file>" (e.g. for testing without touching the real per-user settings).
+        builder.Services.AddFlyerFlipperInfrastructure(builder.Configuration["settings-path"]);
         builder.Services.AddFlyerFlipperImaging();
         builder.Services.AddFlyerFlipperUi();
 

@@ -27,6 +27,7 @@ The pre-existing repo `D:\001_source\AvaloniaControls` establishes the user's ba
 | 13 | **Runtime + UI framework versions (after Slice 2).** Target **.NET 10** (`net10.0`, SDK pinned via `global.json` to `10.0.100` + `latestFeature`); Microsoft.Extensions packages 10.0.12. Avalonia upgraded **11.2.4 → 11.3.22** because the .NET 10 SDK's transitive NuGet audit flagged `Tmds.DBus.Protocol` 0.20.0 (CVE-2026-39959, Linux D-Bus); 11.3.22 depends on the patched 0.21.3. Avalonia.Skia 11.3.22 still uses SkiaSharp 2.88.9, so the Imaging project's SkiaSharp pin is unchanged. |
 | 14 | **Image data flow (decided before Slice 4).** A **hybrid image store**: one Core service loads (and, from Slice 4b, processes) images for both views. It retains **thumbnails for every image** and **full-size images only for a sliding window of the current image ± 1**, and that window is loaded **only in single-view mode**. Memory is bounded by design (N thumbnails + 3 full-size images) — no byte budget or LRU. Opening an image outside the window re-decodes it. Alternatives considered: separate per-view load paths (initially chosen, then replaced by this), and a byte-budget LRU store (deferred — see Future enhancements). Original Slice 4 split into **4a** (store refactor, no behavior change) and **4b** (pipeline pass-through inside the store). |
 | 15 | **Slice 5 design (decided before Slice 5).** (a) The folder input stays **above** the processor tab strip. (b) Processor setting changes apply **on commit** — checkboxes instantly; number fields on Enter, leaving the field, or spinner arrows. (c) `IProcessorControlProvider` lives in **`FlyerFlipper.UI`** and returns a typed Avalonia `Control` (resolves the plan's conflict between "returns an Avalonia control" and "Core stays Avalonia-free"); processor *settings* are plain Core types shared by the processor (Imaging) and its tab (UI). (d) A **viewport display scaling mode** — fit to window, fit without enlarging, stretch to fill, actual size — selected under **View → Image Scaling**; display only, pixels unchanged; applies to single view (thumbnails always fit their cells). (e) The **Resize processor** fits images inside its max width × height, keeping aspect ratio and **never enlarging**. (f) Decoded originals are **not** kept for the full-size window yet: setting changes re-decode (cheap for ~1080 px flyers); see Future enhancements. |
+| 16 | **Slice 6 settings design (decided before Slice 6).** (a) **Processor settings are persisted generically:** `ISettingsStore`/`AppSettings` know nothing about specific processors. Each configurable processor exposes a stable settings id, returns its current settings as a JSON snippet, and accepts a JSON snippet to restore; the settings file stores those snippets keyed by id and hands them back to the matching processors on load (entries for processors not currently registered are preserved). (b) Also persisted: **window size, position, and maximized state** (restored only if the window would be reachable on a current screen; otherwise centered), and the **image scaling mode**. (c) Saves happen **shortly after each change** (debounced) plus a final flush on exit. (d) The viewed image is stored by **file name**; if that file is gone, the first image is selected. (e) If the last folder no longer exists, its path is shown with the usual "folder not found" error and an empty grid; the saved folder is kept. (f) An unreadable or corrupt settings file → start with defaults and rename it to `settings.json.bad`. (g) The active processor tab is stored by **tab name**, not position. |
 
 ---
 
@@ -64,7 +65,7 @@ flyer_flipper/
 - `IThumbnailService` — produces thumbnail `ImageBuffer`s (fit within a square, never upscaled) for the grid view. Input becomes the `ProcessedImage` buffer once the pipeline exists (Slice 4). The UI converts buffers to Avalonia bitmaps.
 - `IViewportModeService` — publishes current viewport mode (grid vs single) and current image index. *(Slice 3: implemented by `ViewportModeService` over `IImageCatalog`; owns navigation — `ShowSingle(index)`, `ShowGrid`, `ToggleMode`, `MoveNext/Previous` (no wrap-around) — and resets to the first image when the catalog is replaced.)*
 - `ILayoutModeService` — publishes vertical vs horizontal main-window layout state, toggled from the View menu.
-- `ISettingsStore` — persists last folder, layout mode, active tab, viewport mode, viewed image index.
+- `ISettingsStore` — persists last folder, layout mode, active tab, viewport mode, viewed image index. *(Slice 6: `Load()`/`Save(AppSettings)`; `AppSettings` also holds scaling mode, window placement, and id-keyed processor JSON snippets. Implemented by `JsonSettingsStore` in Infrastructure. Processors take part via `IConfigurableImageProcessor.SettingsId` / `GetSettingsJson` / `TryApplySettingsJson`; the UI's `SettingsCoordinator` restores at startup and saves 500 ms after changes. The app accepts `--settings-path <file>` to use a different settings file.)*
 
 ### AOT considerations
 
@@ -158,7 +159,7 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 
 ### Slice 6 — Settings persistence
 - Implement `ISettingsStore` (JSON file at OS-appropriate path, `System.Text.Json` source generators).
-- Persist and restore: last folder, layout mode, active tab, viewport mode, viewed image index.
+- Persist and restore (decision 16): last folder, layout mode, active tab (by name), viewport mode, viewed image (by file name), image scaling mode, window size/position/maximized, and each configurable processor's settings as an id-keyed JSON snippet.
 - **Automated verification:** Build + AOT publish clean; tests pass (including round-trip serialization).
 - **Manual verification (STOP — wait for user):** User closes and relaunches the app, verifies state is restored. Explicit approval before Slice 7.
 
@@ -195,7 +196,7 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - `src/FlyerFlipper.Core/Viewport/IViewportModeService.cs`
 - `src/FlyerFlipper.UI/ViewModels/SingleImageViewModel.cs`
 - `src/FlyerFlipper.UI/Views/SingleImageView.axaml[.cs]`
-- `src/FlyerFlipper.Infrastructure/Settings/ISettingsStore.cs`
+- `src/FlyerFlipper.Core/Settings/ISettingsStore.cs`, `src/FlyerFlipper.Core/Settings/AppSettings.cs`
 - `src/FlyerFlipper.Infrastructure/Settings/JsonSettingsStore.cs`
 - `src/FlyerFlipper.Imaging/SkiaImageLoader.cs`
 - `src/FlyerFlipper.Imaging/SkiaThumbnailService.cs`

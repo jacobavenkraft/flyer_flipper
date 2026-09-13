@@ -393,7 +393,13 @@ public class ImageStoreTests
 
         public int Order => 0;
 
+        public string SettingsId => "test.versioned";
+
         public event EventHandler? SettingsChanged;
+
+        public string GetSettingsJson() => $$"""{"version":{{_version}}}""";
+
+        public bool TryApplySettingsJson(string json) => false;
 
         public void SetVersion(int version)
         {

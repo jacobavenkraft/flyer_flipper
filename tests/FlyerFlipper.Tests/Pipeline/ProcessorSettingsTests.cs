@@ -92,7 +92,13 @@ public class ProcessorSettingsTests
     {
         public int Order => 2;
 
+        public string SettingsId => "test.fake";
+
         public event EventHandler? SettingsChanged;
+
+        public string GetSettingsJson() => "{}";
+
+        public bool TryApplySettingsJson(string json) => true;
 
         public void RaiseSettingsChanged() => SettingsChanged?.Invoke(this, EventArgs.Empty);
 

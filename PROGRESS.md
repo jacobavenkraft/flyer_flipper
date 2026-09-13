@@ -14,11 +14,12 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 **Slice 3: DONE — approved** (commits `a9dfade`, fixes `f281bc9`).
 **Slice 4a (hybrid image store refactor): DONE — approved** (commit `88128bc`).
 **Slice 4b (pipeline pass-through): DONE — approved** (commit `24abec8`).
-**Slice 5 (processor tabs + grayscale + resize + image scaling): code + automated verification DONE; manual verification (STOP gate) PENDING USER.** Uncommitted. Design choices: PLAN.md decision 15.
+**Slice 5 (processor tabs + grayscale + resize + image scaling): DONE — approved** (commit `086a335`). Design choices: PLAN.md decision 15.
+**Slice 6 (settings persistence): code + automated verification DONE; manual verification (STOP gate) PENDING USER.** Uncommitted. Design choices: PLAN.md decision 16.
 
 Design decided before Slice 4 (PLAN.md decision 14): hybrid store — thumbnails for all images, full-size sliding window (current ± 1) loaded only in single view, no byte budget. Original Slice 4 split into 4a (store, no behavior change) and 4b (pipeline pass-through inside the store).
 
-Do not begin Slice 6 until the user explicitly approves Slice 5.
+Do not begin Slice 7 until the user explicitly approves Slice 6.
 
 ---
 
@@ -378,7 +379,7 @@ Design decisions made with the user before coding (PLAN.md decision 15): folder 
 
 ---
 
-## Manual verification — Slice 5 (STOP gate — awaiting user)
+## Manual verification checklist — Slice 5 (approved)
 
 **How to build & run:**
 ```powershell
@@ -409,16 +410,91 @@ dotnet run --project src/FlyerFlipper.App
 | 6 | completed | Composition root registrations |
 | 7 | completed | Tests (unit, store, headless UI); fixes found by tests/screenshots (NumericUpDown commit, tab VM sync); mutation checks |
 | 8 | completed | Verify: builds, tests, AOT publish, smoke test, screenshots |
-| 9 | in_progress | Hand off Slice 5 for manual verification |
+| 9 | completed | Hand off Slice 5 for manual verification (approved; committed `086a335`) |
 
 ---
 
-## What's next — Slice 6 preview (do not start until Slice 5 approved)
+## Slice 6 — what shipped
 
-From `PLAN.md § Slice 6`:
-- `ISettingsStore` backed by JSON (`%APPDATA%/FlyerFlipper/settings.json` / `~/.config/FlyerFlipper/settings.json`) with `System.Text.Json` source generators.
-- Persist and restore: last folder, layout orientation, active tab, viewport mode, viewed image index.
-- Likely also (confirm with user): image scaling mode and processor settings (`GrayscaleOptions`, `ResizeOptions`) — the settings view models already follow external changes, so restoring them is straightforward.
+Design decisions made with the user before coding (PLAN.md decision 16): processor settings persisted **generically** as id-keyed JSON snippets handed to/from each processor; window size/position/maximized persisted; debounced save after each change + flush on exit; viewed image by file name (fallback: first image); missing folder shows its error and is kept; corrupt file → defaults + `settings.json.bad`; active tab by name. Image scaling mode is also persisted (recommended earlier; not explicitly discussed in the user's answers — flagged at handoff).
+
+**Core — `Settings/`:**
+- `AppSettings` record: `Version` (=1), `LastFolder`, `Orientation`, `ViewportMode`, `ViewedImageFileName`, `ScaleMode`, `ActiveProcessorTab`, `Window`, `Processors` (`IReadOnlyDictionary<string, JsonElement>` — opaque per-processor JSON).
+- `ISettingsStore` (`Load` → defaults on missing/bad file; `Save`).
+- `WindowPlacement(X, Y, Width, Height, IsMaximized)` (position in screen pixels, size in DIPs = normal/restore-down bounds), `ScreenArea`, `WindowPlacementRules.IsReachable` (≥120×24 px of title bar must land on a screen's working area; handles negative multi-monitor coordinates and DPI scaling) + `MinWidth/MinHeight` 600×400.
+- `IWindowPlacementSource` (`Current`, `Changed`).
+- `Pipeline/IConfigurableImageProcessor` gained `SettingsId`, `GetSettingsJson()`, `TryApplySettingsJson(json)`. `ProcessorSettings<T>` gained `ToJson(JsonTypeInfo<T>)` / `TryUpdateFromJson(json, JsonTypeInfo<T>)` (false and unchanged on malformed JSON or validation failure).
+
+**Imaging:** `Processors/ProcessorOptionsJsonContext` (source-generated, camelCase) for `GrayscaleOptions`/`ResizeOptions`. `GrayscaleProcessor` id `flyerflipper.grayscale`, `ResizeProcessor` id `flyerflipper.resize` — **these ids must never change**.
+
+**Infrastructure — `Settings/`:** `AppSettingsJsonContext` (source-generated; indented, camelCase, enum names as strings, tolerates comments/trailing commas) and `JsonSettingsStore` (default `Environment.SpecialFolder.ApplicationData/FlyerFlipper/settings.json` → `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or `~/.config` on Linux). Atomic save via `settings.json.tmp` + move. On JSON/IO/validation errors: trace, move the file to `settings.json.bad` (replacing an older one), return defaults. `AddFlyerFlipperInfrastructure(settingsFilePath)` registers it.
+
+**UI — `Settings/`:**
+- `WindowPlacementTracker : IWindowPlacementSource` — `Attach(window, saved)` before show: raises size to the minimum, positions manually if reachable else centers, applies maximized; then tracks `PositionChanged`/`ClientSize`/`WindowState`, remembering normal bounds while maximized and never saving minimized.
+- `SettingsCoordinator` — phase 1 `LoadAndApplyStartupState()` (orientation, scale mode, each configurable processor's snippet by id, tab by header; starts watching), phase 2 `RestoreImagesAsync()` (folder via the normal Load command, select by file name or first, return to single view). Watches catalog, layout, viewport (mode/current image/scale), processors' `SettingsChanged`, tab selection, and window placement; saves 500 ms after the last change (`TimeProvider`-based debounce), `Flush()` on exit. Nothing is saved while restoring (saved once afterwards if anything changed). `Capture()` preserves snippets for processors not currently registered and, until a folder has loaded this session, keeps the saved folder/image/mode.
+- `ProcessorTabHostViewModel` gained `SelectedHeader` and `SelectTab(header)`.
+
+**App:** `App.axaml.cs` runs phase 1, attaches the tracker with the saved placement, runs phase 2 when the window opens, flushes on `desktop.Exit`. `Program.cs` accepts **`--settings-path <file>`** (via host configuration) to use another settings file — used for verification so the real per-user file isn't touched.
+
+**Tests:** 250 total (54 new).
+- `Settings/JsonSettingsStoreTests` — defaults when missing; full round trip; readable JSON (named enums, embedded processor objects, no temp file left); replace; 5 kinds of corrupt file → defaults + `.bad`; older `.bad` replaced; locked file doesn't throw; unknown/missing properties & comments tolerated; default path.
+- `Settings/WindowPlacementRulesTests` — reachable/unreachable edges, negative-coordinate second monitor (and after unplugging it), nonsense sizes, no screens.
+- `Settings/ProcessorSettingsJsonTests` — stable ids, round trips, apply raises `SettingsChanged`, missing properties use defaults, 6 invalid snippets rejected leaving settings unchanged.
+- `Settings/SettingsCoordinatorTests` (fake store, `FakeTimeProvider`, single-threaded context) — startup applies layout/scale/tab/snippets; invalid snippet/unknown tab keep defaults; restore reopens folder + selects by file name + single view; missing file → first image; missing folder → error shown, folder/image/mode kept on save; debounce (one save, countdown restarts); captures folder/image/mode/window; flush only when dirty and no double save; unregistered processor entries preserved; changes during restore saved once afterwards.
+- `Headless/SettingsPersistenceUiTests` — tracker applies saved size/position/maximized; off-screen → centered; tiny size raised to minimum; tracks moves/resizes/maximize, not minimized; tab selected by name shows selected; **two-session relaunch through a real settings file** restores layout, scaling, both processors (and their tab controls), tab, folder, single view on the same image, window position and width.
+- Mutation checks (all caught): no debounce, image not found by name, unknown processor entries dropped, missing folder overwritten, saving during restore, bad file not set aside, placement applied without reachability check.
+
+## Automated verification — Slice 6 (all green)
+
+- `dotnet build -c Release`: 0 warnings, 0 errors.
+- `dotnet test -c Release`: 250/250 passed.
+- AOT publish `win-x64`: clean, no warnings.
+- **Real AOT exe relaunch check** (scratch script, `--settings-path` to a scratch file, only the launched process driven): run 1 with no file → wrote `settings.json` with defaults, window placement, and both processor snippets; run 2 with pre-written settings → window opened at exactly (210, 160) with 900×640 client area (916×679 outer), and horizontal layout / Actual Size / Resize tab / both processor snippets survived the save on exit; run 3 with a corrupt file → started, kept `settings.json.bad` with the original text, wrote a fresh file. All exits code 0. Display scaling on this machine was 100%; >100% DPI and multi-monitor restore not exercised on real hardware.
+
+---
+
+## Manual verification — Slice 6 (STOP gate — awaiting user)
+
+**How to build & run:**
+```powershell
+cd D:\001_source\flyer_flipper
+dotnet run --project src/FlyerFlipper.App
+# Settings file: %APPDATA%\FlyerFlipper\settings.json
+# Optional: dotnet run --project src/FlyerFlipper.App -- --settings-path D:\temp\ff-settings.json
+```
+
+**What to check (close and relaunch after each group):**
+- Load a folder, open an image in single view, toggle orientation, pick a scaling mode, enable grayscale, set resize values, select the Resize tab, move/resize the window → relaunch: all of it comes back, including the same image in single view.
+- Maximize, close, relaunch → opens maximized; restore-down returns to the previous normal size/position.
+- Delete or rename the viewed image file (or its folder) between runs → first image selected (or folder error shown with an empty grid; the path stays in the box).
+- Put garbage in `settings.json` → app starts with defaults and `settings.json.bad` holds the garbage.
+- Settings are written about half a second after a change (watch the file's timestamp), and on exit.
+- If you have multiple monitors: place the window on a secondary monitor, close, disconnect it (or change arrangement), relaunch → window appears centered on an available screen.
+- Review: `Core/Settings/*`, `IConfigurableImageProcessor` JSON members, `JsonSettingsStore`, `SettingsCoordinator`, `WindowPlacementTracker`, and the startup wiring in `App.axaml.cs`.
+
+---
+
+## Task snapshot (Slice 6)
+
+| # | Status | Task |
+|---|--------|------|
+| 1 | completed | Design questions with user; PLAN.md decision 16 and Slice 6 text |
+| 2 | completed | Core settings model, store interface, window placement rules; processor JSON members |
+| 3 | completed | Imaging processor JSON contexts + ids; Infrastructure `JsonSettingsStore` |
+| 4 | completed | UI `WindowPlacementTracker`, `SettingsCoordinator`, tab selection by name; App startup/exit wiring; `--settings-path` |
+| 5 | completed | Tests (store, rules, processor JSON, coordinator with fake clock, headless tracker + relaunch); mutation checks |
+| 6 | completed | Verify: build, tests, AOT publish, real AOT exe relaunch check with scratch settings |
+| 7 | in_progress | Hand off Slice 6 for manual verification |
+
+---
+
+## What's next — Slice 7 preview (do not start until Slice 6 approved)
+
+From `PLAN.md § Slice 7` — Polish + Linux verification:
+- Cross-platform verification on Linux (WSL2 or VM — **user to confirm which**).
+- Final AOT publish on `win-x64` and `linux-x64` (Linux AOT publish needs a Linux build environment/toolchain — confirm).
+- Full test suite green on Windows (and on Linux if run there); headless tests may need `SkiaSharp.NativeAssets.Linux` in the test project.
+- MVP acceptance: user exercises the whole flow end-to-end.
 
 ---
 
@@ -426,5 +502,5 @@ From `PLAN.md § Slice 6`:
 
 1. Read this file, then `PLAN.md`.
 2. Read the memory index at `C:\Users\jacob\.claude\projects\D--001-source\memory\MEMORY.md`.
-3. Check whether the user has approved Slice 5. If not, ask.
-4. Slice 6 begins only after that approval.
+3. Check whether the user has approved Slice 6. If not, ask.
+4. Slice 7 begins only after that approval.
