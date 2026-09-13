@@ -12,11 +12,12 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 **Slice 2: DONE — approved** (commit `5e3192b`).
 **.NET 10 migration: DONE — approved** (commit `7207f3d`).
 **Slice 3: DONE — approved** (commits `a9dfade`, fixes `f281bc9`).
-**Slice 4a (hybrid image store refactor): code + automated verification DONE; manual verification (STOP gate) PENDING USER.** Uncommitted.
+**Slice 4a (hybrid image store refactor): DONE — approved** (commit `88128bc`).
+**Slice 4b (pipeline pass-through): code + automated verification DONE; manual verification (STOP gate) PENDING USER.** Uncommitted.
 
 Design decided before Slice 4 (PLAN.md decision 14): hybrid store — thumbnails for all images, full-size sliding window (current ± 1) loaded only in single view, no byte budget. Original Slice 4 split into 4a (store, no behavior change) and 4b (pipeline pass-through inside the store).
 
-Do not begin Slice 4b until the user explicitly approves Slice 4a.
+Do not begin Slice 5 until the user explicitly approves Slice 4b.
 
 ---
 
@@ -250,13 +251,7 @@ Both regression tests were confirmed to fail with the fix temporarily reverted (
 
 ---
 
-## Manual verification — Slice 4a (STOP gate — awaiting user)
-
-**How to build & run:**
-```powershell
-cd D:\001_source\flyer_flipper
-dotnet run --project src/FlyerFlipper.App
-```
+## Manual verification checklist — Slice 4a (approved)
 
 **Goal: nothing should look or behave differently from Slice 3.** Re-run the Slice 3 checklist above, paying attention to:
 - Thumbnails fill in progressively; loading a second folder mid-generation switches cleanly.
@@ -276,18 +271,75 @@ dotnet run --project src/FlyerFlipper.App
 | 3 | completed | UI: `AvaloniaBitmapFactory`, DI, grid + single view models as store observers |
 | 4 | completed | Store unit tests + single-threaded test context; mutation checks |
 | 5 | completed | Verify: build, tests, AOT publish, smoke test, headless screenshots |
-| 6 | in_progress | Hand off Slice 4a for manual verification |
+| 6 | completed | Hand off Slice 4a for manual verification (approved; committed `88128bc`) |
 
 ---
 
-## What's next — Slice 4b preview (do not start until Slice 4a approved)
+## Slice 4b — what shipped
 
-From `PLAN.md § Slice 4b`:
-- Define `IImageProcessor` (`ProcessedImage Process(ProcessedImage input, CancellationToken ct)`, `Order`), `IImageProcessingPipeline`, `ProcessedImage` (carries an `ImageBuffer` + metadata).
-- Default pipeline runs injected `IEnumerable<IImageProcessor>` in `Order` sequence; pass-through with none registered.
-- Wire the pipeline inside `ImageStore` between decode and display-image creation (both the thumbnail worker and full-size loads), so both views get processed images.
-- Debug-only logging processor proving it runs per load.
-- Tests: pipeline ordering, pass-through, cancellation; store invokes pipeline once per decode.
+**Core — `Pipeline/`** (no new dependencies):
+- `ProcessedImage` — record: `ImageBuffer Buffer` + `IReadOnlyDictionary<string, string> Metadata`. `FromSource(SourceImage)` records `ImageMetadataKeys.SourcePath` / `SourceFileName`; `WithMetadata(key, value)` returns a copy. String-only metadata keeps it ABI-friendly for the future plugin boundary.
+- `IImageProcessor` — `int Order`, `ProcessedImage Process(ProcessedImage input, CancellationToken)`. Contract: don't mutate the input buffer; must be thread-safe (called concurrently by thumbnail workers and full-size loads).
+- `IImageProcessingPipeline` / `ImageProcessingPipeline` — snapshots and stable-sorts the injected processors at construction (ties keep DI registration order); checks cancellation before each step and after the last; a processor returning null → `InvalidOperationException`. No processors → returns the input instance.
+- `ImageStore` now takes `IImageProcessingPipeline`; a single private `LoadAndProcess` (decode → `ProcessedImage.FromSource` → pipeline) feeds **both** the thumbnail worker and full-size loads. Pipeline exceptions surface as `Failed` slots ("Could not load image."); cancellation (folder change / window release) reaches running processors through their token.
+
+**Imaging — `Processors/DiagnosticLoggingProcessor`:** pass-through, `Order = int.MaxValue` (logs final output), `[LoggerMessage]` source-generated `ILogger` call: `Pipeline run #N: <file> (<W>x<H>) on thread <id>`. Added `Microsoft.Extensions.Logging.Abstractions` 10.0.12 to Imaging.
+
+**App — `Program.cs`:** registers `IImageProcessingPipeline → ImageProcessingPipeline`; `#if DEBUG` registers `DiagnosticLoggingProcessor` as an `IImageProcessor`. Release/AOT builds have zero processors (pure pass-through).
+
+**Tests:** 139 total (20 new).
+- `Pipeline/ImageProcessingPipelineTests` (10): pass-through returns same instance; runs by `Order`; ties keep registration order; output feeds next; pre-cancelled; cancelled mid-pipeline stops before next; cancelled during last still throws; token passed through; null result throws; processor list snapshot.
+- `Pipeline/ProcessedImageTests` (3), `Pipeline/DiagnosticLoggingProcessorTests` (2).
+- `Store/ImageStoreTests` (+5): pipeline runs exactly once per decode (= loader decodes) across thumbnails and the full-size window; once when a full-size load also produces the thumbnail; pipeline output is what both thumbnails and full images show (dimension-changing processor); processor failure → failed slots; folder change cancels the token a running processor sees.
+- Mutation checks: skipping the pipeline in the thumbnail path, skipping it in the full-size path, and ignoring `Order` each fail the targeted tests; restored → all pass.
+
+## Automated verification — Slice 4b (all green)
+
+- `dotnet build -c Release` and `-c Debug`: 0 warnings, 0 errors.
+- `dotnet test -c Release`: 139/139 passed.
+- AOT publish `win-x64` (Release, no logging processor): clean, no warnings. Smoke test: launches, exit code 0.
+- **End-to-end on the real Debug app** (scratch UI Automation script, 5 generated 1200×1600 PNG/JPG flyers, stdout redirected to a file): loading the folder logged runs #1–#5 (one per image, on 4 background threads); Ctrl+Shift+V into single view on image 0 logged #6 (`flyer0.png`) and #7 (`flyer1.jpg`) — the current image and its only neighbour. Exactly the expected once-per-decode behaviour.
+
+---
+
+## Manual verification — Slice 4b (STOP gate — awaiting user)
+
+**How to build & run (Debug, so the logging processor is registered):**
+```powershell
+cd D:\001_source\flyer_flipper
+dotnet run --project src/FlyerFlipper.App | Out-Host
+```
+Log lines go to standard output via the console logger (and to the IDE's Debug Output window when run under a debugger). Because the app is a GUI-subsystem exe, pipe (`| Out-Host`) or redirect (`> pipeline.log`) its output; redirecting `dotnet run`'s stdout to a file was verified to capture the lines.
+
+**What to check:**
+- UX unchanged from Slice 4a (grid, single view, navigation, orientation).
+- Loading a folder of N images logs N `Pipeline run #…` lines — one per thumbnail decode.
+- Entering single view logs the current image and its neighbours (up to 3 lines); stepping right logs only the newly entered neighbour; returning to the grid logs nothing.
+- Loading a new folder mid-generation: remaining lines are for the new folder only.
+- Review: `Core/Pipeline/*`, `ImageStore.LoadAndProcess`, `Imaging/Processors/DiagnosticLoggingProcessor.cs`, and the `#if DEBUG` registration in `Program.cs`.
+
+---
+
+## Task snapshot (Slice 4b)
+
+| # | Status | Task |
+|---|--------|------|
+| 1 | completed | Core pipeline: `ProcessedImage`, `ImageMetadataKeys`, `IImageProcessor`, `IImageProcessingPipeline`, `ImageProcessingPipeline` |
+| 2 | completed | Wire pipeline into `ImageStore` (`LoadAndProcess` for thumbnails + full-size) |
+| 3 | completed | `DiagnosticLoggingProcessor` (Imaging) + Debug-only registration; pipeline DI registration |
+| 4 | completed | Tests: pipeline, processed image, logging processor, store+pipeline; mutation checks |
+| 5 | completed | Verify: build (Release+Debug), tests, AOT publish, smoke test, end-to-end log check via UI Automation |
+| 6 | in_progress | Hand off Slice 4b for manual verification |
+
+---
+
+## What's next — Slice 5 preview (do not start until Slice 4b approved)
+
+From `PLAN.md § Slice 5`:
+- Controls region becomes a `TabControl` populated from `IProcessorControlProvider` implementations resolved from DI (the folder input presumably becomes the first tab or stays above the tabs — confirm with user).
+- `GrayscaleProcessor` (SkiaSharp `SKColorFilter`) with an enable checkbox; `ResizeProcessor` (`SKBitmap.Resize`) with target-dimension inputs.
+- Processor setting changes trigger re-processing with cancellation of in-flight work — in the store: needs a "processing settings changed" signal that re-generates thumbnails and the full-size window.
+- Decide (PLAN.md Future enhancements): keep decoded originals for the full-size window so single view re-processes instantly on setting changes.
 
 ---
 
@@ -295,5 +347,5 @@ From `PLAN.md § Slice 4b`:
 
 1. Read this file, then `PLAN.md`.
 2. Read the memory index at `C:\Users\jacob\.claude\projects\D--001-source\memory\MEMORY.md`.
-3. Check whether the user has approved Slice 4a. If not, ask.
-4. Slice 4b begins only after that approval.
+3. Check whether the user has approved Slice 4b. If not, ask.
+4. Slice 5 begins only after that approval.

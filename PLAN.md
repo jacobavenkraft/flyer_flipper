@@ -55,9 +55,10 @@ flyer_flipper/
 - `IImageCatalog` — *(added in Slice 2)* holds the current image set (`Query`, `Images`, `ImagesChanged`). Inputs (folder box, later restored settings) call `LoadAsync`; views (thumbnail grid, later single view) observe it. Keeps the input and viewport view models decoupled.
 - `ImageBuffer` — *(added in Slice 2)* plain pixel buffer record: `ReadOnlyMemory<byte>` pixels, width, height, stride, `ImagePixelFormat` (MVP: `Bgra8888Premultiplied`). No Avalonia/SkiaSharp types. The pixel payload that `ProcessedImage` will carry in Slice 4.
 - `IImageLoader` — reads a source reference into an in-memory `SourceImage` (`ImageReference` + `ImageBuffer`) using SkiaSharp codecs, with EXIF orientation applied. *(Slice 2 change: originally sketched as wrapping an `SKBitmap`, but that would put SkiaSharp into Core; the SkiaSharp ↔ `ImageBuffer` conversion lives only in `FlyerFlipper.Imaging`.)*
-- `ProcessedImage` — plain record: pixel buffer (`ReadOnlyMemory<byte>`), width/height, stride, pixel format enum, metadata dictionary. No dependency on Avalonia or SkiaSharp — kept blittable / ABI-friendly in anticipation of the future native-COM plugin boundary.
+- `ProcessedImage` — plain record: pixel buffer (`ReadOnlyMemory<byte>`), width/height, stride, pixel format enum, metadata dictionary. No dependency on Avalonia or SkiaSharp — kept blittable / ABI-friendly in anticipation of the future native-COM plugin boundary. *(Slice 4b: `ImageBuffer Buffer` + `IReadOnlyDictionary<string, string> Metadata`; `FromSource` records `source.path` / `source.fileName` (`ImageMetadataKeys`).)*
 - `IImageProcessor` — a single processing step. `ProcessedImage Process(ProcessedImage input, CancellationToken ct)`. Ordered by an `Order` property. In-process MVP processors implement this directly; future native plugins will be wrapped in a `ComWrappers`-backed adapter satisfying this same interface.
-- `IImageProcessingPipeline` — receives injected `IEnumerable<IImageProcessor>`, executes them in `Order` sequence per image, returns final `ProcessedImage`.
+- `IImageProcessingPipeline` — receives injected `IEnumerable<IImageProcessor>`, executes them in `Order` sequence per image, returns final `ProcessedImage`. *(Slice 4b: `ImageProcessingPipeline` — stable sort (ties keep registration order), cancellation checked between steps, thread-safe; invoked only inside `ImageStore`, once per decode, so thumbnails and full-size images share processing.)*
+- `IImageStore<TImage>` — *(added in Slice 4a)* the single source of display images; see decision 14.
 - `IProcessorControlProvider` — each processor tab's UI is discovered via DI. Each processor registers a paired provider that yields the processor's control ViewModel + view type. The UI layer looks these up when building the tab strip.
 - `IThumbnailService` — produces thumbnail `ImageBuffer`s (fit within a square, never upscaled) for the grid view. Input becomes the `ProcessedImage` buffer once the pipeline exists (Slice 4). The UI converts buffers to Avalonia bitmaps.
 - `IViewportModeService` — publishes current viewport mode (grid vs single) and current image index. *(Slice 3: implemented by `ViewportModeService` over `IImageCatalog`; owns navigation — `ShowSingle(index)`, `ShowGrid`, `ToggleMode`, `MoveNext/Previous` (no wrap-around) — and resets to the first image when the catalog is replaced.)*
@@ -176,6 +177,9 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - `src/FlyerFlipper.UI/Views/MainWindow.axaml[.cs]` — layout Grid + menu bar
 - `src/FlyerFlipper.UI/ViewModels/MainWindowViewModel.cs`
 - `src/FlyerFlipper.UI/Views/ProcessorTabHost.axaml[.cs]` — resolves and hosts processor tabs
+- `src/FlyerFlipper.Core/Store/ImageStore.cs`
+- `src/FlyerFlipper.Core/Pipeline/ProcessedImage.cs`
+- `src/FlyerFlipper.Core/Pipeline/ImageProcessingPipeline.cs`
 - `src/FlyerFlipper.Core/Pipeline/IImageProcessor.cs`
 - `src/FlyerFlipper.Core/Pipeline/IImageProcessingPipeline.cs`
 - `src/FlyerFlipper.Core/Pipeline/IProcessorControlProvider.cs`

@@ -1,4 +1,5 @@
 using FlyerFlipper.Core.Imaging;
+using FlyerFlipper.Core.Pipeline;
 using FlyerFlipper.Core.Source;
 using FlyerFlipper.Core.Viewport;
 
@@ -15,6 +16,7 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
     private readonly IImageCatalog _catalog;
     private readonly IViewportModeService _viewport;
     private readonly IImageLoader _loader;
+    private readonly IImageProcessingPipeline _pipeline;
     private readonly IThumbnailService _thumbnails;
     private readonly IDisplayImageFactory<TImage> _factory;
     private readonly ImageStoreOptions _options;
@@ -26,6 +28,7 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
         IImageCatalog catalog,
         IViewportModeService viewport,
         IImageLoader loader,
+        IImageProcessingPipeline pipeline,
         IThumbnailService thumbnails,
         IDisplayImageFactory<TImage> factory,
         ImageStoreOptions? options = null)
@@ -33,6 +36,7 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
         _catalog = catalog;
         _viewport = viewport;
         _loader = loader;
+        _pipeline = pipeline;
         _thumbnails = thumbnails;
         _factory = factory;
         _options = options ?? new ImageStoreOptions();
@@ -167,13 +171,12 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
             var (full, thumbnail) = await Task.Run(
                 () =>
                 {
-                    var source = _loader.Load(entry.Reference, token);
-                    token.ThrowIfCancellationRequested();
-                    var fullImage = _factory.Create(source.Buffer);
+                    var processed = LoadAndProcess(entry.Reference, token);
+                    var fullImage = _factory.Create(processed);
                     try
                     {
                         var thumbnailImage = wantThumbnail
-                            ? _factory.Create(_thumbnails.CreateThumbnail(source.Buffer, _options.ThumbnailMaxEdge))
+                            ? _factory.Create(_thumbnails.CreateThumbnail(processed, _options.ThumbnailMaxEdge))
                             : null;
                         return (fullImage, thumbnailImage);
                     }
@@ -255,9 +258,8 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
                     var thumbnail = await Task.Run(
                         () =>
                         {
-                            var source = _loader.Load(entry.Reference, token);
-                            token.ThrowIfCancellationRequested();
-                            return _factory.Create(_thumbnails.CreateThumbnail(source.Buffer, _options.ThumbnailMaxEdge));
+                            var processed = LoadAndProcess(entry.Reference, token);
+                            return _factory.Create(_thumbnails.CreateThumbnail(processed, _options.ThumbnailMaxEdge));
                         },
                         token);
 
@@ -320,6 +322,17 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
     }
 
     // ---- Helpers --------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Decode, then run the pipeline — the only way pixels reach either view, so thumbnails and full-size
+    /// images always reflect the same processing. Runs on a background thread.
+    /// </summary>
+    private ImageBuffer LoadAndProcess(ImageReference reference, CancellationToken cancellationToken)
+    {
+        var source = _loader.Load(reference, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return _pipeline.Process(ProcessedImage.FromSource(source), cancellationToken).Buffer;
+    }
 
     private bool IsLive(Session session) => !_disposed && ReferenceEquals(session, _session);
 

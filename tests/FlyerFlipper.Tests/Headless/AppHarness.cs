@@ -5,6 +5,7 @@ using FlyerFlipper.Core.Imaging;
 using FlyerFlipper.Core.Layout;
 using FlyerFlipper.Core.Source;
 using Avalonia.Media.Imaging;
+using FlyerFlipper.Core.Pipeline;
 using FlyerFlipper.Core.Store;
 using FlyerFlipper.Core.Viewport;
 using FlyerFlipper.Imaging;
@@ -34,7 +35,7 @@ internal sealed class AppHarness : IDisposable
         Catalog = new ImageCatalog(_source.Object);
         Layout = new LayoutModeService();
         Viewport = new ViewportModeService(Catalog);
-        Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, new SkiaThumbnailService(), new AvaloniaBitmapFactory());
+        Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, new ImageProcessingPipeline([]), new SkiaThumbnailService(), new AvaloniaBitmapFactory());
         ImageSource = new ImageSourceViewModel(Catalog);
         Grid = new ThumbnailGridViewModel(Store, Layout, Viewport);
         Single = new SingleImageViewModel(Viewport, Store);

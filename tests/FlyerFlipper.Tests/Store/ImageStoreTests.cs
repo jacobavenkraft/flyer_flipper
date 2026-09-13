@@ -1,3 +1,4 @@
+using FlyerFlipper.Core.Pipeline;
 using FlyerFlipper.Core.Source;
 using FlyerFlipper.Core.Store;
 using FlyerFlipper.Core.Viewport;
@@ -16,7 +17,7 @@ public class ImageStoreTests
         private readonly Mock<IImageSource> _source = new();
         private IReadOnlyList<ImageReference> _images = [];
 
-        public Fixture(int maxConcurrentThumbnails = 2)
+        public Fixture(int maxConcurrentThumbnails = 2, params IImageProcessor[] processors)
         {
             _source.Setup(s => s.Enumerate(It.IsAny<ImageSourceQuery>(), It.IsAny<CancellationToken>())).Returns(() => _images);
             Catalog = new ImageCatalog(_source.Object);
@@ -25,6 +26,7 @@ public class ImageStoreTests
                 Catalog,
                 Viewport,
                 Loader,
+                new ImageProcessingPipeline(processors),
                 new FakeThumbnailService(),
                 Factory,
                 new ImageStoreOptions { ThumbnailMaxEdge = ThumbnailEdge, MaxConcurrentThumbnailLoads = maxConcurrentThumbnails });
@@ -291,6 +293,109 @@ public class ImageStoreTests
         Assert.Equal(0, f.Loader.Started(first[5]) + f.Loader.Started(first[6]) + f.Loader.Started(first[7]));
         Assert.Equal([0, 1], f.FullIndices(ImageLoadState.Ready)); // still single mode: new first image + neighbour
     });
+
+    // ---- Pipeline (Slice 4b) ---------------------------------------------------------------------
+
+    [Fact]
+    public void Pipeline_RunsExactlyOncePerDecode_ForThumbnailsAndFullSizeLoads() => SingleThreadedContext.Run(async () =>
+    {
+        var probe = new Pipeline.RecordingProcessor(0, "probe");
+        using var f = new Fixture(maxConcurrentThumbnails: 2, probe);
+        await f.LoadFolderAsync(5);
+        await f.AllThumbnailsSettledAsync();
+
+        Assert.All(Enumerable.Range(0, 5), i => Assert.Equal(1, probe.CallsFor(f[i].FileName)));
+
+        f.Viewport.ShowSingle(2);
+        await SingleThreadedContext.WaitUntilAsync(() => f.FullIndices(ImageLoadState.Ready).Length == 3);
+
+        Assert.Equal([1, 2, 2, 2, 1], Enumerable.Range(0, 5).Select(i => probe.CallsFor(f[i].FileName)));
+        Assert.All(Enumerable.Range(0, 5), i => Assert.Equal(f.Loader.Started(f[i]), probe.CallsFor(f[i].FileName)));
+    });
+
+    [Fact]
+    public void Pipeline_RunsOnce_WhenFullSizeLoadAlsoProducesTheThumbnail() => SingleThreadedContext.Run(async () =>
+    {
+        var probe = new Pipeline.RecordingProcessor(0, "probe");
+        using var f = new Fixture(maxConcurrentThumbnails: 1, probe);
+        var images = Fixture.References(6);
+        f.Loader.Close(images[0]);
+        await f.LoadFolderAsync(images);
+        await SingleThreadedContext.WaitUntilAsync(() => f.Loader.Started(images[0]) == 1);
+
+        f.Viewport.ShowSingle(4);
+        await SingleThreadedContext.WaitUntilAsync(() => f.FullIndices(ImageLoadState.Ready).Length == 3);
+        f.Loader.Open(images[0]);
+        await f.AllThumbnailsSettledAsync();
+
+        Assert.Equal(1, probe.CallsFor(images[4].FileName));
+    });
+
+    [Fact]
+    public void PipelineOutput_IsWhatBothThumbnailsAndFullSizeImagesShow() => SingleThreadedContext.Run(async () =>
+    {
+        // Stands in for a real processor: turns every 400x300 decode into 120x60.
+        var reshape = new Pipeline.RecordingProcessor(0, "reshape", image => image with { Buffer = Pipeline.TestImages.Buffer(120, 60) });
+        using var f = new Fixture(maxConcurrentThumbnails: 2, reshape);
+        await f.LoadFolderAsync(3);
+        await f.AllThumbnailsSettledAsync();
+        f.Viewport.ShowSingle(1);
+        await SingleThreadedContext.WaitUntilAsync(() => f.Store.GetFullImage(1).State == ImageLoadState.Ready);
+
+        var thumbnail = f.Store.GetThumbnail(1).Image!;
+        var full = f.Store.GetFullImage(1).Image!;
+        Assert.Equal((100, 50), (thumbnail.Width, thumbnail.Height)); // unprocessed would be 100x75
+        Assert.Equal((120, 60), (full.Width, full.Height));           // unprocessed would be 400x300
+    });
+
+    [Fact]
+    public void ProcessorFailure_MarksSlotsFailed() => SingleThreadedContext.Run(async () =>
+    {
+        var failing = new Pipeline.RecordingProcessor(0, "boom", image =>
+            image.Metadata[ImageMetadataKeys.SourceFileName] == "image01.png" ? throw new InvalidOperationException("boom") : image);
+        using var f = new Fixture(maxConcurrentThumbnails: 2, failing);
+        await f.LoadFolderAsync(3);
+        await f.AllThumbnailsSettledAsync();
+
+        f.Viewport.ShowSingle(1);
+        await SingleThreadedContext.WaitUntilAsync(() => f.Store.GetFullImage(1).State == ImageLoadState.Failed);
+
+        Assert.Equal(ImageLoadState.Failed, f.Store.GetThumbnail(1).State);
+        Assert.Equal("Could not load image.", f.Store.GetFullImage(1).Error);
+        Assert.Equal(ImageLoadState.Ready, f.Store.GetThumbnail(0).State);
+    });
+
+    [Fact]
+    public void FolderChange_CancelsTokenSeenByARunningProcessor() => SingleThreadedContext.Run(async () =>
+    {
+        var entered = new ManualResetEventSlim();
+        bool? sawCancellation = null;
+        var slow = new SlowProcessor(entered, cancelled => sawCancellation = cancelled);
+        using var f = new Fixture(maxConcurrentThumbnails: 1, slow);
+        await f.LoadFolderAsync(Fixture.References(1, @"C:\first"));
+        await SingleThreadedContext.WaitUntilAsync(() => entered.IsSet);
+
+        await f.LoadFolderAsync(Fixture.References(1, @"C:\second"));
+        await SingleThreadedContext.WaitUntilAsync(() => sawCancellation is not null);
+
+        Assert.True(sawCancellation);
+    });
+
+    private sealed class SlowProcessor(ManualResetEventSlim entered, Action<bool> finished) : IImageProcessor
+    {
+        public int Order => 0;
+
+        public ProcessedImage Process(ProcessedImage input, CancellationToken cancellationToken)
+        {
+            if (input.Metadata[ImageMetadataKeys.SourcePath].StartsWith(@"C:\first", StringComparison.Ordinal))
+            {
+                entered.Set();
+                finished(cancellationToken.WaitHandle.WaitOne(TimeSpan.FromSeconds(5)));
+            }
+
+            return input;
+        }
+    }
 
     [Fact]
     public void Dispose_DisposesEveryHeldImage() => SingleThreadedContext.Run(async () =>
