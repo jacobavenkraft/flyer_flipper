@@ -7,10 +7,21 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>FlyerFlipper.Imaging</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\FlyerFlipper.Core\FlyerFlipper.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pinned to the version Avalonia.Skia 11.2.4 ships with, so only one native libSkiaSharp is loaded. -->
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FlyerFlipper.Tests" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:FlyerFlipper.UI.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="400"
+             x:Class="FlyerFlipper.UI.Views.ImageSourceView"
+             x:DataType="vm:ImageSourceViewModel">
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.status">
+      <Setter Property="Opacity" Value="0.75"/>
+    </Style>
+    <Style Selector="TextBlock.status.error">
+      <Setter Property="Opacity" Value="1"/>
+      <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Spacing="6">
+    <TextBlock Text="Image folder" FontWeight="SemiBold"/>
+
+    <Grid ColumnDefinitions="*,Auto">
+      <TextBox Text="{Binding FolderPath}"
+               Watermark="Paste a folder path and press Enter">
+        <TextBox.KeyBindings>
+          <KeyBinding Gesture="Enter" Command="{Binding LoadFolderCommand}"/>
+        </TextBox.KeyBindings>
+      </TextBox>
+      <Button Grid.Column="1"
+              Margin="6,0,0,0"
+              Content="Load"
+              Command="{Binding LoadFolderCommand}"/>
+    </Grid>
+
+    <TextBlock Classes="status"
+               Classes.error="{Binding HasError}"
+               Text="{Binding StatusMessage}"
+               TextWrapping="Wrap"/>
+  </StackPanel>
+
+</UserControl>

@@ -7,7 +7,12 @@
     <LangVersion>latest</LangVersion>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <RootNamespace>FlyerFlipper.UI</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FlyerFlipper.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\FlyerFlipper.Core\FlyerFlipper.Core.csproj" />

@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:FlyerFlipper.UI.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="FlyerFlipper.UI.Views.ThumbnailGridView"
+             x:DataType="vm:ThumbnailGridViewModel">
+
+  <Panel>
+    <ScrollViewer x:Name="Scroller"
+                  HorizontalScrollBarVisibility="{Binding HorizontalScrollBarVisibility}"
+                  VerticalScrollBarVisibility="{Binding VerticalScrollBarVisibility}">
+      <ItemsControl ItemsSource="{Binding Items}" Margin="8">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel x:DataType="vm:ThumbnailGridViewModel"
+                       Orientation="{Binding ItemsFlow}"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ThumbnailItemViewModel">
+            <Border Width="180" Height="200" Margin="6"
+                    CornerRadius="4"
+                    Background="{DynamicResource SystemChromeLowColor}"
+                    ToolTip.Tip="{Binding Reference.FullPath}">
+              <Grid RowDefinitions="*,Auto">
+                <Image Source="{Binding Thumbnail}"
+                       Stretch="Uniform"
+                       Margin="8"
+                       RenderOptions.BitmapInterpolationMode="HighQuality"/>
+
+                <ProgressBar IsIndeterminate="True"
+                             IsVisible="{Binding IsLoading}"
+                             Width="80" MinWidth="0"
+                             VerticalAlignment="Center"
+                             HorizontalAlignment="Center"/>
+
+                <TextBlock IsVisible="{Binding HasError}"
+                           Text="{Binding ErrorMessage}"
+                           Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           FontSize="12"
+                           Margin="8"
+                           VerticalAlignment="Center"/>
+
+                <TextBlock Grid.Row="1"
+                           Text="{Binding FileName}"
+                           TextTrimming="CharacterEllipsis"
+                           HorizontalAlignment="Center"
+                           FontSize="12"
+                           Margin="8,0,8,8"/>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <TextBlock IsVisible="{Binding IsEmpty}"
+               Text="{Binding EmptyMessage}"
+               Opacity="0.6"
+               FontSize="14"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"/>
+  </Panel>
+
+</UserControl>

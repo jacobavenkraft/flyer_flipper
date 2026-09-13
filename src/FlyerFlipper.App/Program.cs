@@ -1,6 +1,9 @@
 using Avalonia;
 using FlyerFlipper.Core.Application;
 using FlyerFlipper.Core.Layout;
+using FlyerFlipper.Core.Source;
+using FlyerFlipper.Imaging.DependencyInjection;
+using FlyerFlipper.Infrastructure.DependencyInjection;
 using FlyerFlipper.UI.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,7 +18,10 @@ internal static class Program
         var builder = Host.CreateApplicationBuilder(args);
 
         builder.Services.AddSingleton<ILayoutModeService, LayoutModeService>();
+        builder.Services.AddSingleton<IImageCatalog, ImageCatalog>();
         builder.Services.AddSingleton<IApplicationShutdown, AvaloniaApplicationShutdown>();
+        builder.Services.AddFlyerFlipperInfrastructure();
+        builder.Services.AddFlyerFlipperImaging();
         builder.Services.AddFlyerFlipperUi();
 
         using var host = builder.Build();

@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:FlyerFlipper.UI.ViewModels"
+        xmlns:views="using:FlyerFlipper.UI.Views"
         mc:Ignorable="d"
         x:Class="FlyerFlipper.UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -30,20 +31,14 @@
               Background="{DynamicResource SystemChromeLowColor}"
               BorderBrush="{DynamicResource SystemChromeDisabledLowColor}"
               BorderThickness="{Binding ControlsBorderThickness}"
+              Width="{Binding ControlsWidth}"
               MinHeight="120" MinWidth="240"
               Padding="16">
-        <TextBlock Text="Controls region (placeholder)"
-                   VerticalAlignment="Center"
-                   HorizontalAlignment="Center"
-                   FontSize="14"/>
+        <views:ImageSourceView DataContext="{Binding ImageSource}"/>
       </Border>
 
-      <Border Background="{DynamicResource SystemChromeMediumLowColor}"
-              Padding="16">
-        <TextBlock Text="Viewport region (placeholder)"
-                   VerticalAlignment="Center"
-                   HorizontalAlignment="Center"
-                   FontSize="14"/>
+      <Border Background="{DynamicResource SystemChromeMediumLowColor}">
+        <views:ThumbnailGridView DataContext="{Binding ThumbnailGrid}"/>
       </Border>
     </DockPanel>
   </DockPanel>

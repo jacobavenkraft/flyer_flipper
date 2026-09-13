@@ -8,6 +8,8 @@ public static class UiServiceCollectionExtensions
 {
     public static IServiceCollection AddFlyerFlipperUi(this IServiceCollection services)
     {
+        services.AddSingleton<ImageSourceViewModel>();
+        services.AddSingleton<ThumbnailGridViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<MainWindow>();
         return services;

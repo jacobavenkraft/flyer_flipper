@@ -49,13 +49,15 @@ flyer_flipper/
 ### Key abstractions (in `FlyerFlipper.Core`)
 
 - `ImageSourceQuery` — record: `{ RootPath, Recursive, FormatWildcard, NameWildcard }`.
-- `IImageSource` — takes `ImageSourceQuery`, enumerates matching image file references. MVP UI supplies only `RootPath` with defaults for the rest.
-- `IImageLoader` — reads a source reference into an in-memory `SourceImage` (SkiaSharp `SKBitmap` + metadata) using SkiaSharp codecs.
+- `IImageSource` — takes `ImageSourceQuery`, enumerates matching image file references (`ImageReference`). MVP UI supplies only `RootPath` with defaults for the rest. Implemented by `FileSystemImageSource` in Infrastructure.
+- `IImageCatalog` — *(added in Slice 2)* holds the current image set (`Query`, `Images`, `ImagesChanged`). Inputs (folder box, later restored settings) call `LoadAsync`; views (thumbnail grid, later single view) observe it. Keeps the input and viewport view models decoupled.
+- `ImageBuffer` — *(added in Slice 2)* plain pixel buffer record: `ReadOnlyMemory<byte>` pixels, width, height, stride, `ImagePixelFormat` (MVP: `Bgra8888Premultiplied`). No Avalonia/SkiaSharp types. The pixel payload that `ProcessedImage` will carry in Slice 4.
+- `IImageLoader` — reads a source reference into an in-memory `SourceImage` (`ImageReference` + `ImageBuffer`) using SkiaSharp codecs, with EXIF orientation applied. *(Slice 2 change: originally sketched as wrapping an `SKBitmap`, but that would put SkiaSharp into Core; the SkiaSharp ↔ `ImageBuffer` conversion lives only in `FlyerFlipper.Imaging`.)*
 - `ProcessedImage` — plain record: pixel buffer (`ReadOnlyMemory<byte>`), width/height, stride, pixel format enum, metadata dictionary. No dependency on Avalonia or SkiaSharp — kept blittable / ABI-friendly in anticipation of the future native-COM plugin boundary.
 - `IImageProcessor` — a single processing step. `ProcessedImage Process(ProcessedImage input, CancellationToken ct)`. Ordered by an `Order` property. In-process MVP processors implement this directly; future native plugins will be wrapped in a `ComWrappers`-backed adapter satisfying this same interface.
 - `IImageProcessingPipeline` — receives injected `IEnumerable<IImageProcessor>`, executes them in `Order` sequence per image, returns final `ProcessedImage`.
 - `IProcessorControlProvider` — each processor tab's UI is discovered via DI. Each processor registers a paired provider that yields the processor's control ViewModel + view type. The UI layer looks these up when building the tab strip.
-- `IThumbnailService` — produces thumbnail bitmaps from `ProcessedImage` for the grid view.
+- `IThumbnailService` — produces thumbnail `ImageBuffer`s (fit within a square, never upscaled) for the grid view. Input becomes the `ProcessedImage` buffer once the pipeline exists (Slice 4). The UI converts buffers to Avalonia bitmaps.
 - `IViewportModeService` — publishes current viewport mode (grid vs single) and current image index.
 - `ILayoutModeService` — publishes vertical vs horizontal main-window layout state, toggled from the View menu.
 - `ISettingsStore` — persists last folder, layout mode, active tab, viewport mode, viewed image index.
@@ -163,6 +165,10 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - `src/FlyerFlipper.Core/Pipeline/IProcessorControlProvider.cs`
 - `src/FlyerFlipper.Core/Source/ImageSourceQuery.cs`
 - `src/FlyerFlipper.Core/Source/IImageSource.cs`
+- `src/FlyerFlipper.Core/Source/IImageCatalog.cs`
+- `src/FlyerFlipper.Core/Imaging/ImageBuffer.cs`
+- `src/FlyerFlipper.Infrastructure/Source/FileSystemImageSource.cs`
+- `src/FlyerFlipper.UI/ViewModels/ThumbnailGridViewModel.cs`
 - `src/FlyerFlipper.Core/Layout/ILayoutModeService.cs`
 - `src/FlyerFlipper.Core/Viewport/IViewportModeService.cs`
 - `src/FlyerFlipper.Infrastructure/Settings/ISettingsStore.cs`
@@ -188,6 +194,7 @@ Items discussed during planning but explicitly deferred out of MVP. Captured her
   - **Native UI handle wiring.** Plugin's control-provider COM object exposes a method returning a native window handle. `NativePluginControlProvider` wraps that handle in a `NativeControlHost`-derived Avalonia control and returns it to the host as any other processor control. All in-process — the plugin owns its native window, the host embeds it.
   - **AOT compatibility.** The host still publishes with `<PublishAot>true</PublishAot>`. All plugin code is *native*, so no managed IL is loaded at runtime — the AOT constraint is not violated. `ComWrappers` and `NativeLibrary` are both AOT-supported.
   - Plugin discovery folder location TBD (candidates: alongside the executable, `%APPDATA%/FlyerFlipper/plugins` on Windows, `~/.local/share/FlyerFlipper/plugins` on Linux).
+- **Large-folder thumbnail performance.** *(Deferred in Slice 2.)* The MVP grid is an `ItemsControl` + `WrapPanel` (not virtualized) and generates every thumbnail up front (bounded to ≤4 concurrent decodes). For folders with thousands of images: a virtualizing wrap layout, generating thumbnails only for visible/near-visible cells, and optionally a reduced-resolution decode path (SkiaSharp `SKCodec` scaled decode for JPEG) — the last must be reconciled with the pipeline running on full-resolution originals.
 - **Wider format support.** TIFF, HEIC, RAW — would need Magick.NET or platform-specific codecs beyond SkiaSharp's native set.
 
 ---
