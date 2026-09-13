@@ -4,7 +4,7 @@
 
 Build a new standalone desktop application at `D:\001_source\flyer_flipper` for cross-platform (Windows + Linux) image processing. Written in C# on Avalonia, architected around SOLID principles, `Microsoft.Extensions.DependencyInjection`, and AOT-compatible from day one. The MVP focuses on: a two-mode main window (vertical/horizontal layout), a tabbed control section, a dual-mode viewport (thumbnail grid vs. Photos-style single view), and a DI-injected image-processing pipeline architected to be extensible and reorderable — even though MVP does not expose reordering UI.
 
-The pre-existing repo `D:\001_source\AvaloniaControls` establishes the user's baseline stack (Avalonia 11.2.4, .NET 9, Fluent theme, Inter font, compiled bindings). This project mirrors that baseline.
+The pre-existing repo `D:\001_source\AvaloniaControls` establishes the user's baseline stack (Avalonia 11.2.4, .NET 9, Fluent theme, Inter font, compiled bindings). This project started from that baseline, then moved to **.NET 10 + Avalonia 11.3.22** after Slice 2 (see decision 13).
 
 ---
 
@@ -24,6 +24,7 @@ The pre-existing repo `D:\001_source\AvaloniaControls` establishes the user's ba
 | 10 | **Plugin ABI (future).** True COM via .NET 8+ `ComWrappers` (`[GeneratedComInterface]`, source-generated, AOT-safe). |
 | 11 | **Plugin UI (future).** Native window handles — HWND (Windows), X11 Window (Linux), NSView (macOS). Host embeds via Avalonia `NativeControlHost`. |
 | 12 | **Plugin packaging & loading (future).** Plugins are **native unmanaged DLLs** (C / C++ / Rust / any language that can produce a native library and a COM vtable). Each plugin DLL exports a well-known C entry point (e.g. `FlyerFlipperCreatePlugin`) that returns an `IUnknown*` to the plugin's root COM object. AOT host loads them **in-process** via `NativeLibrary.Load` + `NativeLibrary.GetExport`, and marshals COM calls via `ComWrappers`. No IPC, no child process, no `AssemblyLoadContext`. AOT-safe because only *native* code is loaded at runtime — the ban on runtime managed-IL loading doesn't apply. |
+| 13 | **Runtime + UI framework versions (after Slice 2).** Target **.NET 10** (`net10.0`, SDK pinned via `global.json` to `10.0.100` + `latestFeature`); Microsoft.Extensions packages 10.0.12. Avalonia upgraded **11.2.4 → 11.3.22** because the .NET 10 SDK's transitive NuGet audit flagged `Tmds.DBus.Protocol` 0.20.0 (CVE-2026-39959, Linux D-Bus); 11.3.22 depends on the patched 0.21.3. Avalonia.Skia 11.3.22 still uses SkiaSharp 2.88.9, so the Imaging project's SkiaSharp pin is unchanged. |
 
 ---
 
