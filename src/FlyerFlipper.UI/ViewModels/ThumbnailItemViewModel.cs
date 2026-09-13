@@ -1,11 +1,13 @@
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using FlyerFlipper.Core.Source;
+using FlyerFlipper.Core.Store;
 
 namespace FlyerFlipper.UI.ViewModels;
 
-public sealed partial class ThumbnailItemViewModel : ObservableObject, IDisposable
+public sealed partial class ThumbnailItemViewModel : ObservableObject
 {
+    /// <summary>Owned by the image store; never disposed here.</summary>
     [ObservableProperty]
     private Bitmap? _thumbnail;
 
@@ -38,25 +40,10 @@ public sealed partial class ThumbnailItemViewModel : ObservableObject, IDisposab
 
     public bool HasError => ErrorMessage is not null;
 
-    public void SetThumbnail(Bitmap bitmap)
+    public void Apply(ImageSlot<Bitmap> slot)
     {
-        var previous = Thumbnail;
-        Thumbnail = bitmap;
-        IsLoading = false;
-        ErrorMessage = null;
-        previous?.Dispose();
-    }
-
-    public void SetError(string message)
-    {
-        IsLoading = false;
-        ErrorMessage = message;
-    }
-
-    public void Dispose()
-    {
-        var thumbnail = Thumbnail;
-        Thumbnail = null;
-        thumbnail?.Dispose();
+        Thumbnail = slot.Image;
+        IsLoading = slot.State is ImageLoadState.NotLoaded or ImageLoadState.Loading;
+        ErrorMessage = slot.State == ImageLoadState.Failed ? slot.Error : null;
     }
 }

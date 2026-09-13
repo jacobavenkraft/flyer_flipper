@@ -4,8 +4,11 @@ using FlyerFlipper.Core.Application;
 using FlyerFlipper.Core.Imaging;
 using FlyerFlipper.Core.Layout;
 using FlyerFlipper.Core.Source;
+using Avalonia.Media.Imaging;
+using FlyerFlipper.Core.Store;
 using FlyerFlipper.Core.Viewport;
 using FlyerFlipper.Imaging;
+using FlyerFlipper.UI.Imaging;
 using FlyerFlipper.UI.ViewModels;
 using FlyerFlipper.UI.Views;
 using Moq;
@@ -31,9 +34,10 @@ internal sealed class AppHarness : IDisposable
         Catalog = new ImageCatalog(_source.Object);
         Layout = new LayoutModeService();
         Viewport = new ViewportModeService(Catalog);
+        Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, new SkiaThumbnailService(), new AvaloniaBitmapFactory());
         ImageSource = new ImageSourceViewModel(Catalog);
-        Grid = new ThumbnailGridViewModel(Catalog, Loader, new SkiaThumbnailService(), Layout, Viewport);
-        Single = new SingleImageViewModel(Catalog, Viewport, Loader);
+        Grid = new ThumbnailGridViewModel(Store, Layout, Viewport);
+        Single = new SingleImageViewModel(Viewport, Store);
         MainViewModel = new MainWindowViewModel(Layout, Viewport, Mock.Of<IApplicationShutdown>(), ImageSource, Grid, Single);
     }
 
@@ -42,6 +46,8 @@ internal sealed class AppHarness : IDisposable
     public LayoutModeService Layout { get; }
 
     public ViewportModeService Viewport { get; }
+
+    public ImageStore<Bitmap> Store { get; }
 
     public FakeImageLoader Loader { get; } = new();
 
@@ -95,6 +101,7 @@ internal sealed class AppHarness : IDisposable
         MainViewModel.Dispose();
         Single.Dispose();
         Grid.Dispose();
+        Store.Dispose();
         Viewport.Dispose();
     }
 }

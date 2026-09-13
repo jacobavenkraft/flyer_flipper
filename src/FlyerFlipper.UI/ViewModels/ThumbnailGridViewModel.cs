@@ -1,30 +1,24 @@
-using System.Diagnostics;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using FlyerFlipper.Core.Imaging;
 using FlyerFlipper.Core.Layout;
-using FlyerFlipper.Core.Source;
+using FlyerFlipper.Core.Store;
 using FlyerFlipper.Core.Viewport;
-using FlyerFlipper.UI.Imaging;
 
 namespace FlyerFlipper.UI.ViewModels;
 
+/// <summary>
+/// Thumbnail grid. Thumbnails come from <see cref="IImageStore{TImage}"/>; this view model only mirrors
+/// the store's slots and the viewport's selection.
+/// </summary>
 public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposable
 {
-    /// <summary>Longest edge, in pixels, of generated thumbnails. Oversized vs. the cell for high-DPI displays.</summary>
-    public const int ThumbnailPixelSize = 256;
-
-    private static readonly int MaxConcurrentLoads = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
-
-    private readonly IImageCatalog _catalog;
-    private readonly IImageLoader _loader;
-    private readonly IThumbnailService _thumbnails;
+    private readonly IImageStore<Bitmap> _store;
     private readonly ILayoutModeService _layoutMode;
     private readonly IViewportModeService _viewport;
 
-    private CancellationTokenSource? _loadCts;
     private ThumbnailItemViewModel? _currentItem;
 
     [ObservableProperty]
@@ -44,21 +38,18 @@ public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposab
     private ScrollBarVisibility _verticalScrollBarVisibility;
 
     public ThumbnailGridViewModel(
-        IImageCatalog catalog,
-        IImageLoader loader,
-        IThumbnailService thumbnails,
+        IImageStore<Bitmap> store,
         ILayoutModeService layoutMode,
         IViewportModeService viewport)
     {
-        _catalog = catalog;
-        _loader = loader;
-        _thumbnails = thumbnails;
+        _store = store;
         _layoutMode = layoutMode;
         _viewport = viewport;
 
         ApplyOrientation(layoutMode.Orientation);
         _layoutMode.OrientationChanged += OnOrientationChanged;
-        _catalog.ImagesChanged += OnImagesChanged;
+        _store.ImagesReset += OnStoreImagesReset;
+        _store.ThumbnailChanged += OnStoreThumbnailChanged;
         _viewport.CurrentImageChanged += OnCurrentImageChanged;
         _viewport.ModeChanged += OnViewportModeChanged;
     }
@@ -88,6 +79,32 @@ public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposab
         }
     }
 
+    // The store raises this before disposing the previous folder's thumbnails, so the old items
+    // (which reference them) are dropped first.
+    private void OnStoreImagesReset(object? sender, EventArgs e)
+    {
+        var items = new List<ThumbnailItemViewModel>(_store.Images.Count);
+        for (var i = 0; i < _store.Images.Count; i++)
+        {
+            var item = new ThumbnailItemViewModel(_store.Images[i], i);
+            item.Apply(_store.GetThumbnail(i));
+            items.Add(item);
+        }
+
+        _currentItem = null;
+        Items = items;
+        EmptyMessage = "No images found in this folder.";
+        UpdateCurrentItem();
+    }
+
+    private void OnStoreThumbnailChanged(object? sender, int index)
+    {
+        if ((uint)index < (uint)Items.Count)
+        {
+            Items[index].Apply(_store.GetThumbnail(index));
+        }
+    }
+
     private void OnViewportModeChanged(object? sender, ViewportMode mode)
     {
         if (mode == ViewportMode.Grid && _viewport.CurrentIndex >= 0)
@@ -98,7 +115,7 @@ public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposab
 
     private void OnCurrentImageChanged(object? sender, EventArgs e) => UpdateCurrentItem();
 
-    // Converges regardless of whether the catalog or viewport handler runs first on a folder change.
+    // Converges regardless of whether the store or viewport handler runs first on a folder change.
     private void UpdateCurrentItem()
     {
         var index = _viewport.CurrentIndex;
@@ -140,98 +157,12 @@ public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposab
         }
     }
 
-    // Raised on the UI thread (the catalog is loaded from UI commands), so the async
-    // continuations below also resume on the UI thread.
-    private void OnImagesChanged(object? sender, EventArgs e)
-    {
-        _loadCts?.Cancel();
-
-        var previous = Items;
-        var items = _catalog.Images.Select(static (r, i) => new ThumbnailItemViewModel(r, i)).ToList();
-        _currentItem = null;
-        Items = items;
-        EmptyMessage = "No images found in this folder.";
-        UpdateCurrentItem();
-
-        foreach (var item in previous)
-        {
-            item.Dispose();
-        }
-
-        if (items.Count > 0)
-        {
-            var cts = new CancellationTokenSource();
-            _loadCts = cts;
-            _ = LoadThumbnailsAsync(items, cts);
-        }
-    }
-
-    private async Task LoadThumbnailsAsync(IReadOnlyList<ThumbnailItemViewModel> items, CancellationTokenSource cts)
-    {
-        using var gate = new SemaphoreSlim(MaxConcurrentLoads);
-        try
-        {
-            await Task.WhenAll(items.Select(item => LoadThumbnailAsync(item, gate, cts.Token)));
-        }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
-        {
-            // Superseded by a newer folder load.
-        }
-        finally
-        {
-            if (_loadCts == cts)
-            {
-                _loadCts = null;
-            }
-
-            cts.Dispose();
-        }
-    }
-
-    private async Task LoadThumbnailAsync(ThumbnailItemViewModel item, SemaphoreSlim gate, CancellationToken cancellationToken)
-    {
-        await gate.WaitAsync(cancellationToken);
-        try
-        {
-            var thumbnail = await Task.Run(
-                () =>
-                {
-                    var source = _loader.Load(item.Reference, cancellationToken);
-                    return _thumbnails.CreateThumbnail(source.Buffer, ThumbnailPixelSize);
-                },
-                cancellationToken);
-
-            cancellationToken.ThrowIfCancellationRequested();
-            item.SetThumbnail(ImageBufferBitmap.Create(thumbnail));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            Trace.WriteLine($"Thumbnail failed for '{item.Reference.FullPath}': {ex}");
-            item.SetError(ex is ImageLoadException or IOException or UnauthorizedAccessException
-                ? ex.Message
-                : "Could not load image.");
-        }
-        finally
-        {
-            gate.Release();
-        }
-    }
-
     public void Dispose()
     {
         _layoutMode.OrientationChanged -= OnOrientationChanged;
-        _catalog.ImagesChanged -= OnImagesChanged;
+        _store.ImagesReset -= OnStoreImagesReset;
+        _store.ThumbnailChanged -= OnStoreThumbnailChanged;
         _viewport.CurrentImageChanged -= OnCurrentImageChanged;
         _viewport.ModeChanged -= OnViewportModeChanged;
-        _loadCts?.Cancel();
-
-        foreach (var item in Items)
-        {
-            item.Dispose();
-        }
     }
 }

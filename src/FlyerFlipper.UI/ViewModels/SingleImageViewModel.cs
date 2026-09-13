@@ -1,30 +1,24 @@
-using System.Diagnostics;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using FlyerFlipper.Core.Imaging;
-using FlyerFlipper.Core.Source;
+using FlyerFlipper.Core.Store;
 using FlyerFlipper.Core.Viewport;
-using FlyerFlipper.UI.Imaging;
 
 namespace FlyerFlipper.UI.ViewModels;
 
 /// <summary>
-/// Full-size view of <see cref="IViewportModeService.CurrentImage"/>. Keeps the current image and its
-/// immediate neighbours decoded so stepping through images feels instant.
+/// Full-size view of <see cref="IViewportModeService.CurrentImage"/>. The image store keeps the current
+/// image and its neighbours decoded while in single mode; this view model only mirrors the current slot.
 /// </summary>
 public sealed partial class SingleImageViewModel : ObservableObject, IDisposable
 {
-    private readonly IImageCatalog _catalog;
     private readonly IViewportModeService _viewport;
-    private readonly IImageLoader _loader;
+    private readonly IImageStore<Bitmap> _store;
 
-    // All members below are touched only on the UI thread.
-    private readonly Dictionary<ImageReference, Task<Bitmap>> _cache = [];
-    private CancellationTokenSource _cacheCts = new();
-    private ImageReference? _displayedReference;
-    private int _showVersion;
+    /// <summary>Index whose slot <see cref="Image"/> came from, or -1.</summary>
+    private int _displayedIndex = -1;
 
+    /// <summary>Owned by the image store; never disposed here.</summary>
     [ObservableProperty]
     private Bitmap? _image;
 
@@ -41,20 +35,22 @@ public sealed partial class SingleImageViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(HasError))]
     private string? _errorMessage;
 
-    public SingleImageViewModel(IImageCatalog catalog, IViewportModeService viewport, IImageLoader loader)
+    public SingleImageViewModel(IViewportModeService viewport, IImageStore<Bitmap> store)
     {
-        _catalog = catalog;
         _viewport = viewport;
-        _loader = loader;
-        _viewport.ModeChanged += OnModeChanged;
-        _viewport.CurrentImageChanged += OnCurrentImageChanged;
+        _store = store;
+        _viewport.ModeChanged += OnViewportModeChanged;
+        _viewport.CurrentImageChanged += OnViewportChanged;
+        _store.ImagesReset += OnViewportChanged;
+        _store.FullImageChanged += OnStoreFullImageChanged;
+        Refresh();
     }
 
     public bool HasError => ErrorMessage is not null;
 
-    public bool CanGoPrevious => _viewport.Mode == ViewportMode.Single && _viewport.CanMovePrevious;
+    public bool CanGoPrevious => IsActive && _viewport.CanMovePrevious;
 
-    public bool CanGoNext => _viewport.Mode == ViewportMode.Single && _viewport.CanMoveNext;
+    public bool CanGoNext => IsActive && _viewport.CanMoveNext;
 
     private bool IsActive => _viewport.Mode == ViewportMode.Single;
 
@@ -67,192 +63,45 @@ public sealed partial class SingleImageViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(IsActive))]
     private void BackToGrid() => _viewport.ShowGrid();
 
-    private void OnModeChanged(object? sender, ViewportMode mode)
+    private void OnViewportModeChanged(object? sender, ViewportMode mode)
     {
-        if (mode == ViewportMode.Single)
-        {
-            _ = ShowCurrentAsync();
-        }
-        else
-        {
-            // Full-size bitmaps are large; release them while the grid is showing.
-            ClearDisplay();
-            ResetCache();
-        }
-
-        RefreshNavigation();
+        Refresh();
         BackToGridCommand.NotifyCanExecuteChanged();
     }
 
-    private void OnCurrentImageChanged(object? sender, EventArgs e)
+    private void OnViewportChanged(object? sender, EventArgs e) => Refresh();
+
+    private void OnStoreFullImageChanged(object? sender, int index)
     {
-        if (IsActive)
+        // Also refresh for the displayed index: the store may release it (and then dispose it)
+        // before our viewport handler has moved us to the new current image.
+        if (index == _viewport.CurrentIndex || index == _displayedIndex)
         {
-            _ = ShowCurrentAsync();
+            Refresh();
+        }
+    }
+
+    private void Refresh()
+    {
+        var index = _viewport.CurrentIndex;
+        if (IsActive && (uint)index < (uint)_store.Images.Count)
+        {
+            var slot = _store.GetFullImage(index);
+            FileName = _store.Images[index].FileName;
+            PositionText = $"{index + 1} / {_store.Images.Count}";
+            Image = slot.Image;
+            _displayedIndex = slot.Image is null ? -1 : index;
+            IsLoading = slot.State is ImageLoadState.NotLoaded or ImageLoadState.Loading;
+            ErrorMessage = slot.State == ImageLoadState.Failed ? slot.Error : null;
         }
         else
         {
-            // The catalog may have been replaced; cached bitmaps could belong to the old folder.
-            ResetCache();
+            Image = null;
+            _displayedIndex = -1;
+            IsLoading = false;
+            ErrorMessage = null;
         }
 
-        RefreshNavigation();
-    }
-
-    private async Task ShowCurrentAsync()
-    {
-        var version = ++_showVersion;
-        var reference = _viewport.CurrentImage;
-        if (reference is null)
-        {
-            ClearDisplay();
-            return;
-        }
-
-        FileName = reference.FileName;
-        PositionText = $"{_viewport.CurrentIndex + 1} / {_viewport.ImageCount}";
-        ErrorMessage = null;
-
-        var index = _viewport.CurrentIndex;
-        var neighbours = new List<ImageReference>(3) { reference };
-        if (_viewport.CanMovePrevious)
-        {
-            neighbours.Add(ImageAt(index - 1));
-        }
-
-        if (_viewport.CanMoveNext)
-        {
-            neighbours.Add(ImageAt(index + 1));
-        }
-
-        if (_displayedReference is not null && !neighbours.Contains(_displayedReference))
-        {
-            ClearDisplay();
-        }
-
-        EvictAllExcept(neighbours);
-
-        var load = GetOrStartLoad(reference);
-        IsLoading = !load.IsCompleted;
-
-        try
-        {
-            var bitmap = await load;
-            if (version != _showVersion)
-            {
-                return;
-            }
-
-            Image = bitmap;
-            _displayedReference = reference;
-        }
-        catch (Exception ex)
-        {
-            if (version != _showVersion || ex is OperationCanceledException)
-            {
-                return;
-            }
-
-            Trace.WriteLine($"Single view failed for '{reference.FullPath}': {ex}");
-            ClearDisplay();
-            ErrorMessage = ex is ImageLoadException or IOException or UnauthorizedAccessException
-                ? ex.Message
-                : "Could not load image.";
-        }
-        finally
-        {
-            if (version == _showVersion)
-            {
-                IsLoading = false;
-            }
-        }
-
-        if (version == _showVersion)
-        {
-            // Pre-decode neighbours; failures surface if and when the user navigates to them.
-            foreach (var neighbour in neighbours)
-            {
-                _ = GetOrStartLoad(neighbour);
-            }
-        }
-    }
-
-    private ImageReference ImageAt(int index) => _catalog.Images[index];
-
-    private Task<Bitmap> GetOrStartLoad(ImageReference reference)
-    {
-        if (_cache.TryGetValue(reference, out var existing))
-        {
-            return existing;
-        }
-
-        var token = _cacheCts.Token;
-        var task = Task.Run(
-            () =>
-            {
-                var source = _loader.Load(reference, token);
-                token.ThrowIfCancellationRequested();
-                return ImageBufferBitmap.Create(source.Buffer);
-            },
-            token);
-
-        _cache[reference] = task;
-        return task;
-    }
-
-    private void EvictAllExcept(IReadOnlyCollection<ImageReference> keep)
-    {
-        foreach (var reference in _cache.Keys.Where(r => !keep.Contains(r)).ToList())
-        {
-            DisposeWhenDone(_cache[reference]);
-            _cache.Remove(reference);
-        }
-    }
-
-    private void ResetCache()
-    {
-        _showVersion++;
-        _cacheCts.Cancel();
-        _cacheCts.Dispose();
-        _cacheCts = new CancellationTokenSource();
-
-        foreach (var task in _cache.Values)
-        {
-            DisposeWhenDone(task);
-        }
-
-        _cache.Clear();
-    }
-
-    private static void DisposeWhenDone(Task<Bitmap> task)
-        => task.ContinueWith(
-            static t =>
-            {
-                if (t.IsCompletedSuccessfully)
-                {
-                    t.Result.Dispose();
-                }
-                else
-                {
-                    _ = t.Exception; // observe, so an evicted failed pre-decode isn't reported as unobserved
-                }
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
-
-    /// <summary>
-    /// Detaches the displayed bitmap. Disposal is left to the cache, which owns every bitmap.
-    /// </summary>
-    private void ClearDisplay()
-    {
-        Image = null;
-        _displayedReference = null;
-        IsLoading = false;
-    }
-
-    private void RefreshNavigation()
-    {
         OnPropertyChanged(nameof(CanGoPrevious));
         OnPropertyChanged(nameof(CanGoNext));
         PreviousCommand.NotifyCanExecuteChanged();
@@ -261,10 +110,9 @@ public sealed partial class SingleImageViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-        _viewport.ModeChanged -= OnModeChanged;
-        _viewport.CurrentImageChanged -= OnCurrentImageChanged;
-        ClearDisplay();
-        ResetCache();
-        _cacheCts.Dispose();
+        _viewport.ModeChanged -= OnViewportModeChanged;
+        _viewport.CurrentImageChanged -= OnViewportChanged;
+        _store.ImagesReset -= OnViewportChanged;
+        _store.FullImageChanged -= OnStoreFullImageChanged;
     }
 }

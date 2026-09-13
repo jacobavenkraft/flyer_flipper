@@ -25,6 +25,7 @@ The pre-existing repo `D:\001_source\AvaloniaControls` establishes the user's ba
 | 11 | **Plugin UI (future).** Native window handles — HWND (Windows), X11 Window (Linux), NSView (macOS). Host embeds via Avalonia `NativeControlHost`. |
 | 12 | **Plugin packaging & loading (future).** Plugins are **native unmanaged DLLs** (C / C++ / Rust / any language that can produce a native library and a COM vtable). Each plugin DLL exports a well-known C entry point (e.g. `FlyerFlipperCreatePlugin`) that returns an `IUnknown*` to the plugin's root COM object. AOT host loads them **in-process** via `NativeLibrary.Load` + `NativeLibrary.GetExport`, and marshals COM calls via `ComWrappers`. No IPC, no child process, no `AssemblyLoadContext`. AOT-safe because only *native* code is loaded at runtime — the ban on runtime managed-IL loading doesn't apply. |
 | 13 | **Runtime + UI framework versions (after Slice 2).** Target **.NET 10** (`net10.0`, SDK pinned via `global.json` to `10.0.100` + `latestFeature`); Microsoft.Extensions packages 10.0.12. Avalonia upgraded **11.2.4 → 11.3.22** because the .NET 10 SDK's transitive NuGet audit flagged `Tmds.DBus.Protocol` 0.20.0 (CVE-2026-39959, Linux D-Bus); 11.3.22 depends on the patched 0.21.3. Avalonia.Skia 11.3.22 still uses SkiaSharp 2.88.9, so the Imaging project's SkiaSharp pin is unchanged. |
+| 14 | **Image data flow (decided before Slice 4).** A **hybrid image store**: one Core service loads (and, from Slice 4b, processes) images for both views. It retains **thumbnails for every image** and **full-size images only for a sliding window of the current image ± 1**, and that window is loaded **only in single-view mode**. Memory is bounded by design (N thumbnails + 3 full-size images) — no byte budget or LRU. Opening an image outside the window re-decodes it. Alternatives considered: separate per-view load paths (initially chosen, then replaced by this), and a byte-budget LRU store (deferred — see Future enhancements). Original Slice 4 split into **4a** (store refactor, no behavior change) and **4b** (pipeline pass-through inside the store). |
 
 ---
 
@@ -122,11 +123,25 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - **Automated verification:** Build + AOT publish clean; tests pass.
 - **Manual verification (STOP — wait for user):** User runs the app, switches between viewport modes, navigates images, verifies Photos-app-like feel. Explicit approval before Slice 4.
 
-### Slice 4 — Pipeline architecture (pass-through)
+### Slice 4a — Image store (sliding window) refactor
+*(Split from the original Slice 4 — see decision 14.)*
+- Add `IImageStore<TImage>` / `ImageStore<TImage>` in Core: the single place images are loaded for display.
+  - **Thumbnails** for every catalog image, generated in the background when a folder is entered and always retained.
+  - **Full-size window**: current image ± 1, loaded **only while in single view**; images leaving the window are released; returning to the grid releases all full-size images.
+  - Window loads take priority over background thumbnail generation.
+  - A full-size load whose thumbnail isn't ready yet also produces the thumbnail (no second decode).
+  - Holds display-ready images created by an injected `IDisplayImageFactory<TImage>` (UI implements it for Avalonia `Bitmap`), so there is exactly one copy of each thumbnail/full image.
+  - UI-thread-affine: reconciles its state with `IImageCatalog` + `IViewportModeService` on their events; always raises its change event *before* disposing a replaced image.
+- `ThumbnailGridViewModel` and `SingleImageViewModel` become pure observers of the store (their loading/caching logic moves into it).
+- No pipeline yet — **behavior must be unchanged** from Slice 3.
+- **Automated verification:** Build + AOT publish clean; store unit tests (window slide, mode gating, priority, cancellation on folder change, thumbnail reuse, disposal) + existing headless tests pass.
+- **Manual verification (STOP — wait for user):** User confirms nothing changed in the running app and reviews the store design before Slice 4b.
+
+### Slice 4b — Pipeline architecture (pass-through)
 - Define `IImageProcessor`, `IImageProcessingPipeline`, `ProcessedImage`.
 - Implement default pipeline that runs the injected `IEnumerable<IImageProcessor>` in `Order` sequence.
-- Wire pipeline between loader and thumbnail service. With zero processors registered, pipeline is pass-through and behavior is unchanged.
-- Add a debug-only logging processor and verify it fires per image.
+- Wire the pipeline inside the image store, between decode and display-image creation (so both views get processed images). With zero processors registered, pipeline is pass-through and behavior is unchanged.
+- Add a debug-only logging processor and verify it fires per load.
 - **Automated verification:** Build + AOT publish clean; xUnit tests (including pipeline ordering + cancellation) pass.
 - **Manual verification (STOP — wait for user):** User runs, confirms UX unchanged, observes log output proving the pipeline runs. User reviews pipeline abstractions before Slice 5.
 
@@ -198,6 +213,8 @@ Items discussed during planning but explicitly deferred out of MVP. Captured her
   - **AOT compatibility.** The host still publishes with `<PublishAot>true</PublishAot>`. All plugin code is *native*, so no managed IL is loaded at runtime — the AOT constraint is not violated. `ComWrappers` and `NativeLibrary` are both AOT-supported.
   - Plugin discovery folder location TBD (candidates: alongside the executable, `%APPDATA%/FlyerFlipper/plugins` on Windows, `~/.local/share/FlyerFlipper/plugins` on Linux).
 - **Large-folder thumbnail performance.** *(Deferred in Slice 2.)* The MVP grid is an `ItemsControl` + `WrapPanel` (not virtualized) and generates every thumbnail up front (bounded to ≤4 concurrent decodes). For folders with thousands of images: a virtualizing wrap layout, generating thumbnails only for visible/near-visible cells, and optionally a reduced-resolution decode path (SkiaSharp `SKCodec` scaled decode for JPEG) — the last must be reconciled with the pipeline running on full-resolution originals.
+- **Byte-budget retention for the image store.** *(Deferred before Slice 4 — decision 14.)* Replace the store's fixed "current ± 1 in single view" window with a memory budget (proposed default ~25% of RAM, capped at 4 GB, exposed as a setting) and LRU eviction, never evicting current ± 1 — so folders that fit stay fully decoded and reopening any image is instant. Memory reference: 12 MP photo ≈ 46 MB BGRA; 600 dpi letter scan ≈ 128 MB. Should be a change to the store's retention policy only; views are unaffected.
+- **Keep decoded originals for the full-size window.** *(Raised before Slice 4; decide in Slice 5.)* Retaining the unprocessed decode of the 3 window images lets processor-setting changes re-process single view instantly without re-decoding, at ~2× window memory. Thumbnails would still re-decode in the background.
 - **Keyboard navigation inside the thumbnail grid.** *(Deferred in Slice 3.)* Thumbnails are opened by double-click or via View → Toggle Viewport Mode (opens the current image). Arrow-key movement between thumbnails and Enter-to-open would need focusable/selectable items (e.g. a `ListBox` with a wrap panel).
 - **Display-sized decoding in single view.** *(Deferred in Slice 3.)* Single view shows full-resolution bitmaps (current + both neighbours kept decoded). Very large scans (e.g. 50 MP ≈ 200 MB each) could be decoded/downscaled to the viewport size instead; would need re-decoding on window resize/zoom, and must be reconciled with the pipeline output.
 - **Wider format support.** TIFF, HEIC, RAW — would need Magick.NET or platform-specific codecs beyond SkiaSharp's native set.

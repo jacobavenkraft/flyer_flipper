@@ -1,6 +1,6 @@
 # Flyer Flipper — Progress log
 
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 
 This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up where we left off.
 
@@ -11,11 +11,12 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 **Slice 1: DONE — approved** (commit `3f74297`).
 **Slice 2: DONE — approved** (commit `5e3192b`).
 **.NET 10 migration: DONE — approved** (commit `7207f3d`).
-**Slice 3 code + automated verification: DONE** (committed by user as `a9dfade`).
-**Slice 3 manual verification: user reported 2 issues → fixed and APPROVED** (fixes may still be uncommitted — check `git status`). See "Slice 3 — fixes from manual verification".
-**Next: Slice 4 (pipeline, pass-through) — not started.** Open question for the user: should the pipeline also feed single view, not just thumbnails?
+**Slice 3: DONE — approved** (commits `a9dfade`, fixes `f281bc9`).
+**Slice 4a (hybrid image store refactor): code + automated verification DONE; manual verification (STOP gate) PENDING USER.** Uncommitted.
 
-Do not begin Slice 4 until the user explicitly approves after building and running Slice 3 locally.
+Design decided before Slice 4 (PLAN.md decision 14): hybrid store — thumbnails for all images, full-size sliding window (current ± 1) loaded only in single view, no byte budget. Original Slice 4 split into 4a (store, no behavior change) and 4b (pipeline pass-through inside the store).
+
+Do not begin Slice 4b until the user explicitly approves Slice 4a.
 
 ---
 
@@ -179,15 +180,7 @@ Not needed for `dotnet build` / `dotnet test` / `dotnet run` — only Native AOT
 
 Both regression tests were confirmed to fail with the fix temporarily reverted (3 failures: chevron off by 3.0px, both selection tests), then pass with it restored. Totals: 106/106 tests; build 0 warnings; AOT publish clean.
 
-## Manual verification — Slice 3 (STOP gate — awaiting user)
-
-**Re-check after fixes:** chevrons centered; single-click a thumbnail (accent border moves to it), then Ctrl+Shift+V or View → Toggle Viewport Mode → that image opens.
-
-**How to build & run:**
-```powershell
-cd D:\001_source\flyer_flipper
-dotnet run --project src/FlyerFlipper.App
-```
+## Manual verification checklist — Slice 3 (approved; re-used for 4a "nothing changed" check)
 
 **What to check:**
 - Load a folder. **Double-click** a thumbnail → it opens full-size in the viewport.
@@ -216,18 +209,85 @@ dotnet run --project src/FlyerFlipper.App
 | 7 | completed | Verify: build, test, AOT publish, launch smoke test |
 | 8 | completed | Hand off Slice 3 for manual verification (user committed `a9dfade`, reported 2 issues) |
 | 9 | completed | Fix chevron centering + click-to-select in grid; regression tests (106 passing) |
-| 10 | in_progress | Hand off fixes for re-verification |
+| 10 | completed | Hand off fixes for re-verification (approved; committed `f281bc9`) |
 
 ---
 
-## What's next — Slice 4 preview (do not start until Slice 3 approved)
+## Slice 4a — what shipped
 
-From `PLAN.md § Slice 4`:
+**Core — `Store/`** (no new dependencies):
+- `IImageStore<TImage>` / `ImageStore<TImage>` — the single source of display images for both views.
+  - `Images`, `GetThumbnail(i)`, `GetFullImage(i)` → `ImageSlot<TImage>` (`State` = `NotLoaded | Loading | Ready | Failed`, `Image`, `Error`).
+  - Events: `ImagesReset`, `ThumbnailChanged(index)`, `FullImageChanged(index)`.
+  - **Thumbnails:** on every catalog change a new *session* starts; `MaxConcurrentThumbnailLoads` worker loops walk the images in order (decode → `IThumbnailService` → display image). Previous session is cancelled and its images disposed. Thumbnails are kept for the session's lifetime.
+  - **Full-size window:** `UpdateWindow()` reconciles with the viewport — current ± 1 in single mode, nothing in grid mode. Loads the current image first; releases indices leaving the window (cancel in-flight load, slot → `NotLoaded`, raise, then dispose). A load that finishes after release is discarded and disposed.
+  - **Priority:** thumbnail workers wait (between items) while any full-size load is active.
+  - **Thumbnail reuse:** a full-size load whose thumbnail isn't ready also creates the thumbnail from the same decode; thumbnail workers skip entries already ready.
+  - **Event ordering:** robust to catalog/viewport/store handler order — `UpdateWindow` does nothing until the store has reset for the catalog the viewport points at.
+  - **Threading:** UI-thread-affine; decoding on the thread pool; continuations return via the owning `SynchronizationContext`. Change events are raised *before* a replaced image is disposed.
+- `IDisplayImageFactory<TImage>` — buffer → display image (UI implements for Avalonia `Bitmap`); the store disposes `IDisposable` images it releases.
+- `ImageStoreOptions` (`ThumbnailMaxEdge` = 256, `MaxConcurrentThumbnailLoads` = clamp(cores/2, 1, 4)).
+- `Imaging/ImageLoadErrors.Describe` — shared "log + user-facing message" for decode failures (moved out of both view models).
+
+**UI:**
+- `Imaging/AvaloniaBitmapFactory : IDisplayImageFactory<Bitmap>`. DI registers `ImageStoreOptions`, the factory, and `IImageStore<Bitmap> → ImageStore<Bitmap>` in `AddFlyerFlipperUi()` (the store is Core code closed over the UI's image type).
+- `ThumbnailGridViewModel` — now depends on `IImageStore<Bitmap>`, `ILayoutModeService`, `IViewportModeService` only. Rebuilds items on `ImagesReset`, applies slots on `ThumbnailChanged`. Its own loading loop, cancellation, and bitmap disposal are gone.
+- `ThumbnailItemViewModel` — `Apply(ImageSlot<Bitmap>)`; no longer disposes bitmaps (store owns them).
+- `SingleImageViewModel` — now depends on `IViewportModeService` + `IImageStore<Bitmap>`; mirrors the current index's full-size slot. Its private neighbour cache, cancellation, and disposal logic are gone. Refreshes for both the current and the previously displayed index, so a released bitmap is never left bound.
+
+**Tests:** 119 total (13 new).
+- `Store/ImageStoreTests` — plain unit tests (no Avalonia) over the real `ImageCatalog` + `ViewportModeService`, a `GatedImageLoader` (hold/fail individual decodes, count starts), fake thumbnail service and display images: thumbnails for all + no full images in grid; window of 3 / 2 at ends; slide reuses retained images and disposes released; grid releases full images but keeps thumbnails; image alive during its release event; late load discarded; priority over thumbnails; thumbnail produced by full load (no second decode); decode failure; folder change resets/cancels/disposes; dispose releases everything.
+- `TestSupport/SingleThreadedContext` — UI-thread-like pump for those tests (drops continuations posted after a test ends).
+- All pre-existing headless tests pass unchanged against the store (`AppHarness` now composes it).
+- Mutation checks: disabling priority, disabling thumbnail reuse, and disposing before raising the release event each fail exactly their targeted test.
+
+## Automated verification — Slice 4a (all green)
+
+- `dotnet build -c Release`: 0 warnings, 0 errors.
+- `dotnet test -c Release`: 119/119 passed (repeated runs stable).
+- AOT publish `win-x64`: clean, no warnings. Smoke test: launches, exit code 0.
+- Headless screenshots (scratch project) identical in layout to Slice 3; chevron glyphs still measure (0.0, 0.0) offset.
+
+---
+
+## Manual verification — Slice 4a (STOP gate — awaiting user)
+
+**How to build & run:**
+```powershell
+cd D:\001_source\flyer_flipper
+dotnet run --project src/FlyerFlipper.App
+```
+
+**Goal: nothing should look or behave differently from Slice 3.** Re-run the Slice 3 checklist above, paying attention to:
+- Thumbnails fill in progressively; loading a second folder mid-generation switches cleanly.
+- Opening a thumbnail and stepping left/right is instant after the first image; holding an arrow key through many images.
+- Opening single view while a large folder is still generating thumbnails — single view should stay responsive (full-size loads now take priority).
+- Returning to the grid, loading a new folder while in single view.
+- Review: `Core/Store/ImageStore.cs` and the two slimmed-down view models.
+
+---
+
+## Task snapshot (Slice 4a)
+
+| # | Status | Task |
+|---|--------|------|
+| 1 | completed | Update PLAN.md: decision 14 (hybrid store), Slice 4a/4b split, future enhancements |
+| 2 | completed | Core store: `IImageStore<TImage>`, `ImageStore<TImage>`, `ImageSlot`, `IDisplayImageFactory`, `ImageStoreOptions` |
+| 3 | completed | UI: `AvaloniaBitmapFactory`, DI, grid + single view models as store observers |
+| 4 | completed | Store unit tests + single-threaded test context; mutation checks |
+| 5 | completed | Verify: build, tests, AOT publish, smoke test, headless screenshots |
+| 6 | in_progress | Hand off Slice 4a for manual verification |
+
+---
+
+## What's next — Slice 4b preview (do not start until Slice 4a approved)
+
+From `PLAN.md § Slice 4b`:
 - Define `IImageProcessor` (`ProcessedImage Process(ProcessedImage input, CancellationToken ct)`, `Order`), `IImageProcessingPipeline`, `ProcessedImage` (carries an `ImageBuffer` + metadata).
 - Default pipeline runs injected `IEnumerable<IImageProcessor>` in `Order` sequence; pass-through with none registered.
-- Wire the pipeline between loader and thumbnail service — and, since Slice 3 now exists, between loader and single view too (confirm with user).
-- Debug-only logging processor proving it runs per image.
-- Tests: pipeline ordering + cancellation.
+- Wire the pipeline inside `ImageStore` between decode and display-image creation (both the thumbnail worker and full-size loads), so both views get processed images.
+- Debug-only logging processor proving it runs per load.
+- Tests: pipeline ordering, pass-through, cancellation; store invokes pipeline once per decode.
 
 ---
 
@@ -235,5 +295,5 @@ From `PLAN.md § Slice 4`:
 
 1. Read this file, then `PLAN.md`.
 2. Read the memory index at `C:\Users\jacob\.claude\projects\D--001-source\memory\MEMORY.md`.
-3. Check whether the user has approved Slice 3. If not, ask.
-4. Slice 4 begins only after that approval.
+3. Check whether the user has approved Slice 4a. If not, ask.
+4. Slice 4b begins only after that approval.
