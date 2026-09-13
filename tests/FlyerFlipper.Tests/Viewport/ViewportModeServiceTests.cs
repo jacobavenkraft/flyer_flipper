@@ -82,6 +82,46 @@ public class ViewportModeServiceTests
         Assert.Equal(1, imageChanges);
     }
 
+    [Fact]
+    public void Select_ChangesCurrentImage_WithoutChangingMode()
+    {
+        var service = CreateWithImages(5);
+        var modeChanges = 0;
+        var imageChanges = 0;
+        service.ModeChanged += (_, _) => modeChanges++;
+        service.CurrentImageChanged += (_, _) => imageChanges++;
+
+        service.Select(3);
+
+        Assert.Equal(ViewportMode.Grid, service.Mode);
+        Assert.Equal(3, service.CurrentIndex);
+        Assert.Equal(1, imageChanges);
+        Assert.Equal(0, modeChanges);
+    }
+
+    [Fact]
+    public void ToggleMode_AfterSelect_OpensSelectedImage()
+    {
+        var service = CreateWithImages(5);
+
+        service.Select(4);
+        service.ToggleMode();
+
+        Assert.Equal(ViewportMode.Single, service.Mode);
+        Assert.Equal(4, service.CurrentIndex);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(5)]
+    public void Select_IndexOutOfRange_Throws(int index)
+    {
+        var service = CreateWithImages(5);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => service.Select(index));
+        Assert.Equal(0, service.CurrentIndex);
+    }
+
     [Theory]
     [InlineData(-1)]
     [InlineData(5)]

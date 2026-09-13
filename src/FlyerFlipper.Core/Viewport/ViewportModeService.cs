@@ -31,13 +31,18 @@ public sealed class ViewportModeService : IViewportModeService, IDisposable
 
     public void ShowGrid() => SetMode(ViewportMode.Grid);
 
+    public void Select(int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, ImageCount);
+        SetCurrentIndex(index);
+    }
+
     public bool ShowSingle(int? index = null)
     {
         if (index is { } requested)
         {
-            ArgumentOutOfRangeException.ThrowIfNegative(requested);
-            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(requested, ImageCount);
-            SetCurrentIndex(requested);
+            Select(requested);
         }
 
         if (CurrentIndex < 0)

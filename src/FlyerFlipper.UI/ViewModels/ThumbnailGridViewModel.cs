@@ -71,6 +71,15 @@ public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposab
     public event EventHandler<int>? ScrollIntoViewRequested;
 
     [RelayCommand]
+    private void SelectImage(ThumbnailItemViewModel? item)
+    {
+        if (item is not null && item.Index < _viewport.ImageCount)
+        {
+            _viewport.Select(item.Index);
+        }
+    }
+
+    [RelayCommand]
     private void OpenImage(ThumbnailItemViewModel? item)
     {
         if (item is not null && item.Index < _viewport.ImageCount)

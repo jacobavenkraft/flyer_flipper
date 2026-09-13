@@ -11,8 +11,9 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 **Slice 1: DONE — approved** (commit `3f74297`).
 **Slice 2: DONE — approved** (commit `5e3192b`).
 **.NET 10 migration: DONE — approved** (commit `7207f3d`).
-**Slice 3 code + automated verification: DONE.**
-**Slice 3 manual verification (STOP gate): PENDING USER.**
+**Slice 3 code + automated verification: DONE** (committed by user as `a9dfade`).
+**Slice 3 manual verification: user reported 2 issues → fixed and APPROVED** (fixes may still be uncommitted — check `git status`). See "Slice 3 — fixes from manual verification".
+**Next: Slice 4 (pipeline, pass-through) — not started.** Open question for the user: should the pipeline also feed single view, not just thumbnails?
 
 Do not begin Slice 4 until the user explicitly approves after building and running Slice 3 locally.
 
@@ -171,7 +172,16 @@ Not needed for `dotnet build` / `dotnet test` / `dotnet run` — only Native AOT
 
 ---
 
+## Slice 3 — fixes from manual verification
+
+1. **Chevron glyphs not centered in their circles.** Cause: `Path` sizes itself from the geometry's origin (0,0), not its bounds, so glyphs drawn at `M 14,4 …` carried 6px/4px of empty space and rendered ~3px right / 2px low. Measured by headless Skia render (glyph bbox vs circle center): offset (3.0, 2.0) → (0.0, 0.0) after redrawing all three glyphs (both chevrons and the "‹ Grid" arrow) to start at the origin. Regression test: `Headless/SingleImageViewLayoutTests` (glyph geometry center vs button center).
+2. **Selecting a thumbnail then toggling to single view showed a different image.** Cause: single-click did nothing — only double-click changed the current image. Fix: `IViewportModeService.Select(index)` (changes current image, not mode); grid view's `Tapped` → `ThumbnailGridViewModel.SelectImageCommand`. The accent border now marks the selection, and View → Toggle Viewport Mode / Ctrl+Shift+V opens it. Tests: 3 `ViewportModeServiceTests` (`Select`), `Headless/ThumbnailGridMouseTests` (real mouse: single click selects without leaving grid; click + Ctrl+Shift+V opens selected; double-click opens).
+
+Both regression tests were confirmed to fail with the fix temporarily reverted (3 failures: chevron off by 3.0px, both selection tests), then pass with it restored. Totals: 106/106 tests; build 0 warnings; AOT publish clean.
+
 ## Manual verification — Slice 3 (STOP gate — awaiting user)
+
+**Re-check after fixes:** chevrons centered; single-click a thumbnail (accent border moves to it), then Ctrl+Shift+V or View → Toggle Viewport Mode → that image opens.
 
 **How to build & run:**
 ```powershell
@@ -204,7 +214,9 @@ dotnet run --project src/FlyerFlipper.App
 | 5 | completed | Unit tests + Avalonia headless keyboard/view-model tests (98 passing) |
 | 6 | completed | Fix error brush resource key (found via headless screenshots) |
 | 7 | completed | Verify: build, test, AOT publish, launch smoke test |
-| 8 | in_progress | Hand off Slice 3 for manual verification |
+| 8 | completed | Hand off Slice 3 for manual verification (user committed `a9dfade`, reported 2 issues) |
+| 9 | completed | Fix chevron centering + click-to-select in grid; regression tests (106 passing) |
+| 10 | in_progress | Hand off fixes for re-verification |
 
 ---
 

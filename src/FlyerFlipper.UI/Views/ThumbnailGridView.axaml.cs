@@ -19,6 +19,7 @@ public partial class ThumbnailGridView : UserControl
     {
         InitializeComponent();
         Scroller.AddHandler(PointerWheelChangedEvent, OnScrollerPointerWheelChanged, RoutingStrategies.Tunnel);
+        Thumbnails.Tapped += OnThumbnailsTapped;
         Thumbnails.DoubleTapped += OnThumbnailsDoubleTapped;
     }
 
@@ -36,6 +37,15 @@ public partial class ThumbnailGridView : UserControl
         }
 
         base.OnDataContextChanged(e);
+    }
+
+    private void OnThumbnailsTapped(object? sender, TappedEventArgs e)
+    {
+        if ((e.Source as StyledElement)?.DataContext is ThumbnailItemViewModel item)
+        {
+            _viewModel?.SelectImageCommand.Execute(item);
+            e.Handled = true;
+        }
     }
 
     private void OnThumbnailsDoubleTapped(object? sender, TappedEventArgs e)

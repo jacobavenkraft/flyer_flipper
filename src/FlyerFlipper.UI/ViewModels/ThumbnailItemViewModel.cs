@@ -16,7 +16,10 @@ public sealed partial class ThumbnailItemViewModel : ObservableObject, IDisposab
     [NotifyPropertyChangedFor(nameof(HasError))]
     private string? _errorMessage;
 
-    /// <summary>Whether this is the viewport's current image (last one opened / navigated to).</summary>
+    /// <summary>
+    /// Whether this is the selected (current) image: clicked in the grid, or last shown in single view.
+    /// Toggling to single view opens it.
+    /// </summary>
     [ObservableProperty]
     private bool _isCurrent;
 

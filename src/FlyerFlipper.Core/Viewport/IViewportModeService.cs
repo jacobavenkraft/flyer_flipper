@@ -32,6 +32,12 @@ public interface IViewportModeService
     void ShowGrid();
 
     /// <summary>
+    /// Makes <paramref name="index"/> the current (selected) image without changing <see cref="Mode"/>.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is outside the catalog.</exception>
+    void Select(int index);
+
+    /// <summary>
     /// Switches to single view at <paramref name="index"/>, or at <see cref="CurrentIndex"/> when null.
     /// Returns <see langword="false"/> (and stays in the grid) when there are no images.
     /// </summary>
