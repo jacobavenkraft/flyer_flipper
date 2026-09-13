@@ -13,7 +13,7 @@
     </Style>
     <Style Selector="TextBlock.status.error">
       <Setter Property="Opacity" Value="1"/>
-      <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource SystemControlErrorTextForegroundBrush}"/>
     </Style>
   </UserControl.Styles>
 

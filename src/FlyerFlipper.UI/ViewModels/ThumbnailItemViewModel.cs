@@ -16,12 +16,20 @@ public sealed partial class ThumbnailItemViewModel : ObservableObject, IDisposab
     [NotifyPropertyChangedFor(nameof(HasError))]
     private string? _errorMessage;
 
-    public ThumbnailItemViewModel(ImageReference reference)
+    /// <summary>Whether this is the viewport's current image (last one opened / navigated to).</summary>
+    [ObservableProperty]
+    private bool _isCurrent;
+
+    public ThumbnailItemViewModel(ImageReference reference, int index)
     {
         Reference = reference;
+        Index = index;
     }
 
     public ImageReference Reference { get; }
+
+    /// <summary>Position in the image catalog.</summary>
+    public int Index { get; }
 
     public string FileName => Reference.FileName;
 

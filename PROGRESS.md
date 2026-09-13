@@ -8,11 +8,13 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 
 ## Current status
 
-**Slice 1: DONE — verified and approved by the user** (commit `3f74297`).
-**Slice 2: DONE — verified and approved by the user** (not yet committed at time of writing).
-**.NET 10 migration (user-requested, between Slices 2 and 3): code + automated verification DONE; manual verification PENDING USER.**
+**Slice 1: DONE — approved** (commit `3f74297`).
+**Slice 2: DONE — approved** (commit `5e3192b`).
+**.NET 10 migration: DONE — approved** (commit `7207f3d`).
+**Slice 3 code + automated verification: DONE.**
+**Slice 3 manual verification (STOP gate): PENDING USER.**
 
-Do not begin Slice 3 until the user confirms the app still behaves correctly on .NET 10 / Avalonia 11.3.22.
+Do not begin Slice 4 until the user explicitly approves after building and running Slice 3 locally.
 
 ---
 
@@ -113,7 +115,47 @@ Do not begin Slice 3 until the user confirms the app still behaves correctly on 
 - AOT publish `win-x64`: clean, no warnings; ~19.3 MB exe now at `src/FlyerFlipper.App/bin/Release/net10.0/win-x64/publish/`.
 - Smoke test: published exe launches, shows "Flyer Flipper", closes with exit code 0.
 
-**Manual verification (awaiting user):** re-run the Slice 2 checklist below on the upgraded stack — Avalonia 11.2 → 11.3 is a minor-version UI framework bump, so look for any visual/behavioral differences (menu, folder box, thumbnail grid, orientation toggle, wheel scrolling).
+**Manual verification:** user re-ran the Slice 2 checklist on the upgraded stack and approved.
+
+---
+
+## Slice 3 — what shipped
+
+**Core** — `Viewport/ViewportMode` (`Grid`, `Single`), `Viewport/IViewportModeService` + `ViewportModeService`:
+- State: `Mode`, `CurrentIndex` (-1 when empty), `CurrentImage`, `ImageCount`, `CanMovePrevious/Next`.
+- Events: `ModeChanged`, `CurrentImageChanged` (also raised when the catalog is replaced even if the index is unchanged).
+- Operations: `ShowGrid`, `ShowSingle(int? index)` (false when no images), `ToggleMode`, `MovePrevious/MoveNext` — **no wrap-around** at the ends.
+- Catalog replaced → current index resets to 0; single mode is kept (shows the new folder's first image); an empty folder forces grid mode.
+
+**UI:**
+- `SingleImageViewModel` + `SingleImageView`:
+  - Image fills the viewport (`Stretch=Uniform`); circular chevron overlays left/right (hidden at the ends); "‹ Grid" button top-left; bottom caption with file name and "n / N"; spinner while decoding; red error text for undecodable files.
+  - Keeps **current + previous + next** decoded (`Task<Bitmap>` cache keyed by `ImageReference`), so stepping is instant after the first image; other bitmaps are evicted and disposed. All full-size bitmaps are released when returning to the grid or when the folder changes.
+- `ThumbnailGridViewModel`: `OpenImageCommand` (double-click a thumbnail → single view at that image); tracks `IsCurrent` (accent border on the current thumbnail); raises `ScrollIntoViewRequested` when returning to the grid so the view scrolls to the image you were on. Hover border on thumbnails.
+- `MainWindowViewModel`: `IsGridMode` / `IsSingleMode`, `ToggleViewportModeCommand` (disabled with no images), exposes `SingleImage`.
+- `MainWindow`:
+  - Menu **View → Toggle Viewport Mode (Grid / Single Image)**, Ctrl+Shift+V.
+  - `Window.KeyBindings` now back **Ctrl+Shift+O** and **Ctrl+Shift+V** — `MenuItem.InputGesture` only displays a shortcut in Avalonia (the binding is now covered by a headless test).
+  - Left / Right / Escape are handled by a tunnelling `KeyDown` handler in code-behind, not `KeyBindings`: a headless test showed window `KeyBindings` fire even while the folder `TextBox` has focus (Right would navigate images instead of moving the caret). Arrows are ignored when focus is in a `TextBox`; Escape always returns to the grid; all three are no-ops in grid mode.
+- **Fix to Slice 2:** error text used `SystemFillColorCriticalBrush`, which Avalonia's Fluent theme doesn't define (rendered black). Now `SystemControlErrorTextForegroundBrush` (red) in all three views. Found by rendering screenshots headlessly.
+
+**App:** `Program.cs` registers `IViewportModeService → ViewportModeService`; UI DI adds `SingleImageViewModel`.
+
+**Tests:** 98 total (28 new).
+- `Viewport/ViewportModeServiceTests` (12) — plain unit tests with a Moq catalog.
+- New **Avalonia headless** test infrastructure (`Avalonia.Headless.XUnit` 11.3.22): `Headless/TestAppBuilder` (assembly-level `[AvaloniaTestApplication]`, Fluent theme), `Headless/AppHarness` (composes the real services + VMs + `MainWindow` over a mocked `IImageSource` and a `FakeImageLoader`).
+  - `MainWindowKeyboardTests` (7) — real key presses against `MainWindow`: Ctrl+Shift+O, Ctrl+Shift+V (with/without images), arrows + Escape in single mode, arrows ignored in grid mode, arrows keep the TextBox caret, arrows navigate when the Load button has focus.
+  - `ViewportViewModelTests` (8) — open from grid, neighbour pre-decoding and reuse, decode error + recovery, bitmaps released on return to grid, command enablement, folder change during single view, current-thumbnail tracking, scroll-into-view request.
+- Headless screenshots (Skia renderer, scratch project outside the repo) were used to eyeball single view, error state, first-image chevrons, grid highlight, and horizontal grid.
+
+**Future enhancements added to `PLAN.md`:** keyboard navigation inside the grid (arrows/Enter); display-sized decoding for very large images in single view.
+
+## Automated verification — Slice 3 (all green)
+
+- `dotnet build -c Release`: 0 warnings, 0 errors.
+- `dotnet test -c Release`: 98/98 passed (run 4× — stable).
+- AOT publish `win-x64`: clean, no warnings.
+- Smoke test: published exe launches and closes with exit code 0.
 
 ---
 
@@ -129,7 +171,7 @@ Not needed for `dotnet build` / `dotnet test` / `dotnet run` — only Native AOT
 
 ---
 
-## Manual verification checklist — Slice 2 (approved on .NET 9; re-run on .NET 10)
+## Manual verification — Slice 3 (STOP gate — awaiting user)
 
 **How to build & run:**
 ```powershell
@@ -138,40 +180,42 @@ dotnet run --project src/FlyerFlipper.App
 ```
 
 **What to check:**
-- Paste a folder path (quotes OK) into the **Image folder** box; press Enter or click **Load**.
-- Status shows the image count; thumbnails appear progressively (spinners first) for JPG/PNG/BMP/WebP files in that folder (not sub-folders).
-- Phone photos with EXIF rotation appear upright.
-- A bad path shows a red error; the previous grid stays.
-- Loading a second folder replaces the grid promptly (in-flight work is cancelled).
-- **View → Toggle Orientation**: vertical layout = rows scrolling down; horizontal layout = columns scrolling right (mouse wheel scrolls sideways).
-- Review the imaging abstractions: `Core/Source`, `Core/Imaging`, `Imaging/*`, and the new `IImageCatalog` seam.
+- Load a folder. **Double-click** a thumbnail → it opens full-size in the viewport.
+- **Right / Left arrows** and the **chevrons** step through images; chevrons hide at the first/last image (no wrap-around). Caption shows file name and "n / N".
+- Stepping to the next/previous image is instant after the first open (neighbours are pre-decoded).
+- **Escape** or the **‹ Grid** button returns to the grid, scrolled to the image you were on, which has an accent border.
+- **View → Toggle Viewport Mode** / **Ctrl+Shift+V** switches grid ↔ single (opens the current image); disabled until a folder with images is loaded.
+- **Ctrl+Shift+O** toggles orientation from the keyboard; single view works in both layouts.
+- Click into the folder box while in single view: Left/Right move the caret, not the image.
+- Load a different folder while in single view → shows that folder's first image.
+- Undecodable files show red error text (grid, single view, and the folder status line).
+- Review: `Core/Viewport`, `SingleImageViewModel` (neighbour cache), `MainWindow.axaml.cs` key handling, and the new headless test harness.
 
 ---
 
-## Task snapshot (Slice 2)
+## Task snapshot (Slice 3)
 
 | # | Status | Task |
 |---|--------|------|
-| 1 | completed | Core abstractions: query, reference, source, catalog, buffer, loader, thumbnail service |
-| 2 | completed | `FileSystemImageSource` (Infrastructure) |
-| 3 | completed | `SkiaImageLoader` + EXIF orientation, `SkiaThumbnailService` (Imaging) |
-| 4 | completed | Folder input view/VM, thumbnail grid view/VM, orientation-bound scrolling |
-| 5 | completed | DI wiring in `Program.cs` |
-| 6 | completed | xUnit tests (70 passing) |
+| 1 | completed | `ViewportMode` + `IViewportModeService` / `ViewportModeService` (Core) |
+| 2 | completed | `SingleImageViewModel` + `SingleImageView` (chevrons, caption, neighbour cache) |
+| 3 | completed | Grid: double-click to open, current highlight, scroll-into-view on return |
+| 4 | completed | MainWindow: viewport switching, menu item, Ctrl+Shift+V/O bindings, arrow/Escape handling |
+| 5 | completed | Unit tests + Avalonia headless keyboard/view-model tests (98 passing) |
+| 6 | completed | Fix error brush resource key (found via headless screenshots) |
 | 7 | completed | Verify: build, test, AOT publish, launch smoke test |
-| 8 | completed | Hand off Slice 2 for manual verification (approved) |
-| 9 | completed | Migrate to .NET 10 + Avalonia 11.3.22; verify build, test, audit, AOT publish |
-| 10 | in_progress | Hand off .NET 10 migration for manual verification |
+| 8 | in_progress | Hand off Slice 3 for manual verification |
 
 ---
 
-## What's next — Slice 3 preview (do not start until the .NET 10 migration is confirmed)
+## What's next — Slice 4 preview (do not start until Slice 3 approved)
 
-From `PLAN.md § Slice 3`:
-- Menu **View → Viewport Mode** toggles grid ↔ single.
-- `IViewportModeService` in Core (mode + current image index); single view observes `IImageCatalog`.
-- Single-image view fills the viewport with left/right chevron overlays.
-- Keyboard: Left/Right navigate, Escape returns to grid. (Likely also: double-click a thumbnail to open it — confirm with user.)
+From `PLAN.md § Slice 4`:
+- Define `IImageProcessor` (`ProcessedImage Process(ProcessedImage input, CancellationToken ct)`, `Order`), `IImageProcessingPipeline`, `ProcessedImage` (carries an `ImageBuffer` + metadata).
+- Default pipeline runs injected `IEnumerable<IImageProcessor>` in `Order` sequence; pass-through with none registered.
+- Wire the pipeline between loader and thumbnail service — and, since Slice 3 now exists, between loader and single view too (confirm with user).
+- Debug-only logging processor proving it runs per image.
+- Tests: pipeline ordering + cancellation.
 
 ---
 
@@ -179,5 +223,5 @@ From `PLAN.md § Slice 3`:
 
 1. Read this file, then `PLAN.md`.
 2. Read the memory index at `C:\Users\jacob\.claude\projects\D--001-source\memory\MEMORY.md`.
-3. Check whether the user has confirmed the .NET 10 migration. If not, ask.
-4. Slice 3 begins only after that confirmation.
+3. Check whether the user has approved Slice 3. If not, ask.
+4. Slice 4 begins only after that approval.

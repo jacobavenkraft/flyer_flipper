@@ -11,6 +11,15 @@
         Width="1000" Height="700"
         MinWidth="600" MinHeight="400">
 
+  <!--
+    MenuItem.InputGesture only displays the shortcut; these bindings make the keys work.
+    Single-image navigation keys (Left/Right/Escape) are handled in code-behind.
+  -->
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+Shift+O" Command="{Binding ToggleOrientationCommand}"/>
+    <KeyBinding Gesture="Ctrl+Shift+V" Command="{Binding ToggleViewportModeCommand}"/>
+  </Window.KeyBindings>
+
   <DockPanel LastChildFill="True">
     <Menu DockPanel.Dock="Top">
       <MenuItem Header="_File">
@@ -20,6 +29,9 @@
         <MenuItem Header="_Toggle Orientation"
                   Command="{Binding ToggleOrientationCommand}"
                   InputGesture="Ctrl+Shift+O"/>
+        <MenuItem Header="Toggle _Viewport Mode (Grid / Single Image)"
+                  Command="{Binding ToggleViewportModeCommand}"
+                  InputGesture="Ctrl+Shift+V"/>
       </MenuItem>
       <MenuItem Header="_Help">
         <MenuItem Header="_About" Command="{Binding AboutCommand}"/>
@@ -37,9 +49,15 @@
         <views:ImageSourceView DataContext="{Binding ImageSource}"/>
       </Border>
 
-      <Border Background="{DynamicResource SystemChromeMediumLowColor}">
-        <views:ThumbnailGridView DataContext="{Binding ThumbnailGrid}"/>
-      </Border>
+      <!-- Visibility lives on wrapper panels: a child's own bindings resolve against its child DataContext. -->
+      <Panel Background="{DynamicResource SystemChromeMediumLowColor}">
+        <Panel IsVisible="{Binding IsGridMode}">
+          <views:ThumbnailGridView DataContext="{Binding ThumbnailGrid}"/>
+        </Panel>
+        <Panel IsVisible="{Binding IsSingleMode}">
+          <views:SingleImageView DataContext="{Binding SingleImage}"/>
+        </Panel>
+      </Panel>
     </DockPanel>
   </DockPanel>
 

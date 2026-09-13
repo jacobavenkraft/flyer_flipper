@@ -7,11 +7,24 @@
              x:Class="FlyerFlipper.UI.Views.ThumbnailGridView"
              x:DataType="vm:ThumbnailGridViewModel">
 
+  <UserControl.Styles>
+    <!-- BorderBrush is set only via styles so :pointerover and .current can override it. -->
+    <Style Selector="Border.thumbnail">
+      <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+    <Style Selector="Border.thumbnail:pointerover">
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemChromeDisabledLowColor}"/>
+    </Style>
+    <Style Selector="Border.thumbnail.current">
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+    </Style>
+  </UserControl.Styles>
+
   <Panel>
     <ScrollViewer x:Name="Scroller"
                   HorizontalScrollBarVisibility="{Binding HorizontalScrollBarVisibility}"
                   VerticalScrollBarVisibility="{Binding VerticalScrollBarVisibility}">
-      <ItemsControl ItemsSource="{Binding Items}" Margin="8">
+      <ItemsControl x:Name="Thumbnails" ItemsSource="{Binding Items}" Margin="8">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <WrapPanel x:DataType="vm:ThumbnailGridViewModel"
@@ -21,9 +34,13 @@
 
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:ThumbnailItemViewModel">
-            <Border Width="180" Height="200" Margin="6"
+            <Border Classes="thumbnail"
+                    Classes.current="{Binding IsCurrent}"
+                    Width="180" Height="200" Margin="6"
                     CornerRadius="4"
+                    BorderThickness="2"
                     Background="{DynamicResource SystemChromeLowColor}"
+                    Cursor="Hand"
                     ToolTip.Tip="{Binding Reference.FullPath}">
               <Grid RowDefinitions="*,Auto">
                 <Image Source="{Binding Thumbnail}"
@@ -39,7 +56,7 @@
 
                 <TextBlock IsVisible="{Binding HasError}"
                            Text="{Binding ErrorMessage}"
-                           Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                           Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"
                            TextWrapping="Wrap"
                            TextAlignment="Center"
                            FontSize="12"

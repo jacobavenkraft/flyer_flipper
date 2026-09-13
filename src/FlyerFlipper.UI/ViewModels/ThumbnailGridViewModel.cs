@@ -2,9 +2,11 @@ using System.Diagnostics;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using FlyerFlipper.Core.Imaging;
 using FlyerFlipper.Core.Layout;
 using FlyerFlipper.Core.Source;
+using FlyerFlipper.Core.Viewport;
 using FlyerFlipper.UI.Imaging;
 
 namespace FlyerFlipper.UI.ViewModels;
@@ -20,8 +22,10 @@ public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposab
     private readonly IImageLoader _loader;
     private readonly IThumbnailService _thumbnails;
     private readonly ILayoutModeService _layoutMode;
+    private readonly IViewportModeService _viewport;
 
     private CancellationTokenSource? _loadCts;
+    private ThumbnailItemViewModel? _currentItem;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
@@ -43,19 +47,69 @@ public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposab
         IImageCatalog catalog,
         IImageLoader loader,
         IThumbnailService thumbnails,
-        ILayoutModeService layoutMode)
+        ILayoutModeService layoutMode,
+        IViewportModeService viewport)
     {
         _catalog = catalog;
         _loader = loader;
         _thumbnails = thumbnails;
         _layoutMode = layoutMode;
+        _viewport = viewport;
 
         ApplyOrientation(layoutMode.Orientation);
         _layoutMode.OrientationChanged += OnOrientationChanged;
         _catalog.ImagesChanged += OnImagesChanged;
+        _viewport.CurrentImageChanged += OnCurrentImageChanged;
+        _viewport.ModeChanged += OnViewportModeChanged;
     }
 
     public bool IsEmpty => Items.Count == 0;
+
+    /// <summary>
+    /// Asks the view to scroll the item at the given index into view (raised when returning to the grid).
+    /// </summary>
+    public event EventHandler<int>? ScrollIntoViewRequested;
+
+    [RelayCommand]
+    private void OpenImage(ThumbnailItemViewModel? item)
+    {
+        if (item is not null && item.Index < _viewport.ImageCount)
+        {
+            _viewport.ShowSingle(item.Index);
+        }
+    }
+
+    private void OnViewportModeChanged(object? sender, ViewportMode mode)
+    {
+        if (mode == ViewportMode.Grid && _viewport.CurrentIndex >= 0)
+        {
+            ScrollIntoViewRequested?.Invoke(this, _viewport.CurrentIndex);
+        }
+    }
+
+    private void OnCurrentImageChanged(object? sender, EventArgs e) => UpdateCurrentItem();
+
+    // Converges regardless of whether the catalog or viewport handler runs first on a folder change.
+    private void UpdateCurrentItem()
+    {
+        var index = _viewport.CurrentIndex;
+        var item = index >= 0 && index < Items.Count ? Items[index] : null;
+        if (ReferenceEquals(item, _currentItem))
+        {
+            return;
+        }
+
+        if (_currentItem is not null)
+        {
+            _currentItem.IsCurrent = false;
+        }
+
+        _currentItem = item;
+        if (item is not null)
+        {
+            item.IsCurrent = true;
+        }
+    }
 
     private void OnOrientationChanged(object? sender, LayoutOrientation e) => ApplyOrientation(e);
 
@@ -84,9 +138,11 @@ public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposab
         _loadCts?.Cancel();
 
         var previous = Items;
-        var items = _catalog.Images.Select(static r => new ThumbnailItemViewModel(r)).ToList();
+        var items = _catalog.Images.Select(static (r, i) => new ThumbnailItemViewModel(r, i)).ToList();
+        _currentItem = null;
         Items = items;
         EmptyMessage = "No images found in this folder.";
+        UpdateCurrentItem();
 
         foreach (var item in previous)
         {
@@ -160,6 +216,8 @@ public sealed partial class ThumbnailGridViewModel : ObservableObject, IDisposab
     {
         _layoutMode.OrientationChanged -= OnOrientationChanged;
         _catalog.ImagesChanged -= OnImagesChanged;
+        _viewport.CurrentImageChanged -= OnCurrentImageChanged;
+        _viewport.ModeChanged -= OnViewportModeChanged;
         _loadCts?.Cancel();
 
         foreach (var item in Items)

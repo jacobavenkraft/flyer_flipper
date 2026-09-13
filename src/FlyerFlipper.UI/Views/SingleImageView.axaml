@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:FlyerFlipper.UI.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="FlyerFlipper.UI.Views.SingleImageView"
+             x:DataType="vm:SingleImageViewModel">
+
+  <UserControl.Styles>
+    <Style Selector="Button.overlay">
+      <Setter Property="Background" Value="#80000000"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Opacity" Value="0.7"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.overlay:pointerover">
+      <Setter Property="Opacity" Value="1"/>
+    </Style>
+    <Style Selector="Button.overlay:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#B0000000"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector="Button.chevron">
+      <Setter Property="Width" Value="48"/>
+      <Setter Property="Height" Value="48"/>
+      <Setter Property="CornerRadius" Value="24"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Margin" Value="16"/>
+    </Style>
+    <Style Selector="Path.glyph">
+      <Setter Property="Stroke" Value="White"/>
+      <Setter Property="StrokeThickness" Value="2.5"/>
+      <Setter Property="StrokeLineCap" Value="Round"/>
+      <Setter Property="StrokeJoin" Value="Round"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Panel Background="{DynamicResource SystemChromeMediumLowColor}">
+    <Image Source="{Binding Image}"
+           Stretch="Uniform"
+           Margin="16"
+           RenderOptions.BitmapInterpolationMode="HighQuality"/>
+
+    <ProgressBar IsIndeterminate="True"
+                 IsVisible="{Binding IsLoading}"
+                 Width="160" MinWidth="0"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"/>
+
+    <TextBlock IsVisible="{Binding HasError}"
+               Text="{Binding ErrorMessage}"
+               Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"
+               TextWrapping="Wrap"
+               TextAlignment="Center"
+               MaxWidth="480"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"/>
+
+    <Button Classes="overlay"
+            HorizontalAlignment="Left" VerticalAlignment="Top"
+            Margin="16" Padding="12,6"
+            CornerRadius="16"
+            Command="{Binding BackToGridCommand}"
+            ToolTip.Tip="Back to grid (Esc)">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Path Classes="glyph" StrokeThickness="2" Data="M 10,2 L 4,8 L 10,14"/>
+        <TextBlock Text="Grid" VerticalAlignment="Center"/>
+      </StackPanel>
+    </Button>
+
+    <Button Classes="overlay chevron"
+            HorizontalAlignment="Left"
+            IsVisible="{Binding CanGoPrevious}"
+            Command="{Binding PreviousCommand}"
+            ToolTip.Tip="Previous (Left arrow)">
+      <Path Classes="glyph" Data="M 14,4 L 6,12 L 14,20"/>
+    </Button>
+
+    <Button Classes="overlay chevron"
+            HorizontalAlignment="Right"
+            IsVisible="{Binding CanGoNext}"
+            Command="{Binding NextCommand}"
+            ToolTip.Tip="Next (Right arrow)">
+      <Path Classes="glyph" Data="M 6,4 L 14,12 L 6,20"/>
+    </Button>
+
+    <Border Background="#80000000"
+            CornerRadius="12"
+            Padding="12,4"
+            Margin="16"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Text="{Binding FileName}" Foreground="White" TextTrimming="CharacterEllipsis" MaxWidth="480"/>
+        <TextBlock Text="{Binding PositionText}" Foreground="White" Opacity="0.7"/>
+      </StackPanel>
+    </Border>
+  </Panel>
+
+</UserControl>

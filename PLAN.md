@@ -59,7 +59,7 @@ flyer_flipper/
 - `IImageProcessingPipeline` — receives injected `IEnumerable<IImageProcessor>`, executes them in `Order` sequence per image, returns final `ProcessedImage`.
 - `IProcessorControlProvider` — each processor tab's UI is discovered via DI. Each processor registers a paired provider that yields the processor's control ViewModel + view type. The UI layer looks these up when building the tab strip.
 - `IThumbnailService` — produces thumbnail `ImageBuffer`s (fit within a square, never upscaled) for the grid view. Input becomes the `ProcessedImage` buffer once the pipeline exists (Slice 4). The UI converts buffers to Avalonia bitmaps.
-- `IViewportModeService` — publishes current viewport mode (grid vs single) and current image index.
+- `IViewportModeService` — publishes current viewport mode (grid vs single) and current image index. *(Slice 3: implemented by `ViewportModeService` over `IImageCatalog`; owns navigation — `ShowSingle(index)`, `ShowGrid`, `ToggleMode`, `MoveNext/Previous` (no wrap-around) — and resets to the first image when the catalog is replaced.)*
 - `ILayoutModeService` — publishes vertical vs horizontal main-window layout state, toggled from the View menu.
 - `ISettingsStore` — persists last folder, layout mode, active tab, viewport mode, viewed image index.
 
@@ -172,6 +172,8 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - `src/FlyerFlipper.UI/ViewModels/ThumbnailGridViewModel.cs`
 - `src/FlyerFlipper.Core/Layout/ILayoutModeService.cs`
 - `src/FlyerFlipper.Core/Viewport/IViewportModeService.cs`
+- `src/FlyerFlipper.UI/ViewModels/SingleImageViewModel.cs`
+- `src/FlyerFlipper.UI/Views/SingleImageView.axaml[.cs]`
 - `src/FlyerFlipper.Infrastructure/Settings/ISettingsStore.cs`
 - `src/FlyerFlipper.Infrastructure/Settings/JsonSettingsStore.cs`
 - `src/FlyerFlipper.Imaging/SkiaImageLoader.cs`
@@ -196,6 +198,8 @@ Items discussed during planning but explicitly deferred out of MVP. Captured her
   - **AOT compatibility.** The host still publishes with `<PublishAot>true</PublishAot>`. All plugin code is *native*, so no managed IL is loaded at runtime — the AOT constraint is not violated. `ComWrappers` and `NativeLibrary` are both AOT-supported.
   - Plugin discovery folder location TBD (candidates: alongside the executable, `%APPDATA%/FlyerFlipper/plugins` on Windows, `~/.local/share/FlyerFlipper/plugins` on Linux).
 - **Large-folder thumbnail performance.** *(Deferred in Slice 2.)* The MVP grid is an `ItemsControl` + `WrapPanel` (not virtualized) and generates every thumbnail up front (bounded to ≤4 concurrent decodes). For folders with thousands of images: a virtualizing wrap layout, generating thumbnails only for visible/near-visible cells, and optionally a reduced-resolution decode path (SkiaSharp `SKCodec` scaled decode for JPEG) — the last must be reconciled with the pipeline running on full-resolution originals.
+- **Keyboard navigation inside the thumbnail grid.** *(Deferred in Slice 3.)* Thumbnails are opened by double-click or via View → Toggle Viewport Mode (opens the current image). Arrow-key movement between thumbnails and Enter-to-open would need focusable/selectable items (e.g. a `ListBox` with a wrap panel).
+- **Display-sized decoding in single view.** *(Deferred in Slice 3.)* Single view shows full-resolution bitmaps (current + both neighbours kept decoded). Very large scans (e.g. 50 MP ≈ 200 MB each) could be decoded/downscaled to the viewport size instead; would need re-decoding on window resize/zoom, and must be reconciled with the pipeline output.
 - **Wider format support.** TIFF, HEIC, RAW — would need Magick.NET or platform-specific codecs beyond SkiaSharp's native set.
 
 ---
