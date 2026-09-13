@@ -6,10 +6,13 @@ using FlyerFlipper.Core.Layout;
 using FlyerFlipper.Core.Source;
 using Avalonia.Media.Imaging;
 using FlyerFlipper.Core.Pipeline;
+using FlyerFlipper.Core.Processors;
 using FlyerFlipper.Core.Store;
 using FlyerFlipper.Core.Viewport;
 using FlyerFlipper.Imaging;
+using FlyerFlipper.Imaging.Processors;
 using FlyerFlipper.UI.Imaging;
+using FlyerFlipper.UI.Processors;
 using FlyerFlipper.UI.ViewModels;
 using FlyerFlipper.UI.Views;
 using Moq;
@@ -35,12 +38,22 @@ internal sealed class AppHarness : IDisposable
         Catalog = new ImageCatalog(_source.Object);
         Layout = new LayoutModeService();
         Viewport = new ViewportModeService(Catalog);
-        Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, new ImageProcessingPipeline([]), new SkiaThumbnailService(), new AvaloniaBitmapFactory());
+        Pipeline = new ImageProcessingPipeline([new GrayscaleProcessor(GrayscaleSettings), new ResizeProcessor(ResizeSettings)]);
+        Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, Pipeline, new SkiaThumbnailService(), new AvaloniaBitmapFactory());
         ImageSource = new ImageSourceViewModel(Catalog);
         Grid = new ThumbnailGridViewModel(Store, Layout, Viewport);
         Single = new SingleImageViewModel(Viewport, Store);
-        MainViewModel = new MainWindowViewModel(Layout, Viewport, Mock.Of<IApplicationShutdown>(), ImageSource, Grid, Single);
+        ProcessorTabs = new ProcessorTabHostViewModel([new ResizeControlProvider(ResizeSettings), new GrayscaleControlProvider(GrayscaleSettings)]);
+        MainViewModel = new MainWindowViewModel(Layout, Viewport, Mock.Of<IApplicationShutdown>(), ImageSource, Grid, Single, ProcessorTabs);
     }
+
+    public ProcessorSettings<GrayscaleOptions> GrayscaleSettings { get; } = new(new GrayscaleOptions());
+
+    public ProcessorSettings<ResizeOptions> ResizeSettings { get; } = new(new ResizeOptions());
+
+    public ImageProcessingPipeline Pipeline { get; }
+
+    public ProcessorTabHostViewModel ProcessorTabs { get; }
 
     public ImageCatalog Catalog { get; }
 
@@ -128,10 +141,25 @@ internal sealed class FakeImageLoader : IImageLoader
             throw new ImageLoadException($"Corrupt image '{reference.FileName}'.");
         }
 
-        const int width = 8;
-        const int height = 6;
+        // Portrait "flyer" with colored horizontal bands (varying per file), so processing is visible in screenshots.
+        const int width = 60;
+        const int height = 80;
+        var seed = (uint)StringComparer.OrdinalIgnoreCase.GetHashCode(reference.FullPath);
         var pixels = new byte[width * height * 4];
-        pixels.AsSpan().Fill(0xFF);
+        for (var y = 0; y < height; y++)
+        {
+            var band = (uint)(y / 20) + seed;
+            byte r = (byte)(band * 97), g = (byte)(band * 57), b = (byte)(band * 23);
+            for (var x = 0; x < width; x++)
+            {
+                var i = ((y * width) + x) * 4;
+                pixels[i] = b;
+                pixels[i + 1] = g;
+                pixels[i + 2] = r;
+                pixels[i + 3] = 0xFF;
+            }
+        }
+
         return new SourceImage(reference, new ImageBuffer(pixels, width, height, width * 4, ImagePixelFormat.Bgra8888Premultiplied));
     }
 }

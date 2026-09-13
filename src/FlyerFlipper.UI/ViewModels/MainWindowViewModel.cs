@@ -32,7 +32,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         IApplicationShutdown shutdown,
         ImageSourceViewModel imageSource,
         ThumbnailGridViewModel thumbnailGrid,
-        SingleImageViewModel singleImage)
+        SingleImageViewModel singleImage,
+        ProcessorTabHostViewModel processorTabs)
     {
         _layoutMode = layoutMode;
         _viewport = viewport;
@@ -40,10 +41,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         ImageSource = imageSource;
         ThumbnailGrid = thumbnailGrid;
         SingleImage = singleImage;
+        ProcessorTabs = processorTabs;
         ApplyOrientation(layoutMode.Orientation);
         _layoutMode.OrientationChanged += OnOrientationChanged;
         _viewport.ModeChanged += OnViewportModeChanged;
         _viewport.CurrentImageChanged += OnCurrentImageChanged;
+        _viewport.ScaleModeChanged += OnScaleModeChanged;
     }
 
     public ImageSourceViewModel ImageSource { get; }
@@ -52,9 +55,30 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public SingleImageViewModel SingleImage { get; }
 
+    public ProcessorTabHostViewModel ProcessorTabs { get; }
+
     public bool IsGridMode => _viewport.Mode == ViewportMode.Grid;
 
     public bool IsSingleMode => _viewport.Mode == ViewportMode.Single;
+
+    public bool IsScaleFitToWindow => _viewport.ScaleMode == ViewportScaleMode.FitToWindow;
+
+    public bool IsScaleFitWithoutEnlarging => _viewport.ScaleMode == ViewportScaleMode.FitWithoutEnlarging;
+
+    public bool IsScaleStretchToFill => _viewport.ScaleMode == ViewportScaleMode.StretchToFill;
+
+    public bool IsScaleActualSize => _viewport.ScaleMode == ViewportScaleMode.ActualSize;
+
+    [RelayCommand]
+    private void SetScaleMode(ViewportScaleMode scaleMode) => _viewport.SetScaleMode(scaleMode);
+
+    private void OnScaleModeChanged(object? sender, ViewportScaleMode e)
+    {
+        OnPropertyChanged(nameof(IsScaleFitToWindow));
+        OnPropertyChanged(nameof(IsScaleFitWithoutEnlarging));
+        OnPropertyChanged(nameof(IsScaleStretchToFill));
+        OnPropertyChanged(nameof(IsScaleActualSize));
+    }
 
     [RelayCommand]
     private void ToggleOrientation() => _layoutMode.Toggle();
@@ -68,7 +92,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private void Exit() => _shutdown.Shutdown();
 
     [RelayCommand]
-    private void About() => Trace.WriteLine("Flyer Flipper — MVP Slice 3");
+    private void About() => Trace.WriteLine("Flyer Flipper — MVP Slice 5");
 
     private void OnOrientationChanged(object? sender, LayoutOrientation e) => ApplyOrientation(e);
 
@@ -103,5 +127,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _layoutMode.OrientationChanged -= OnOrientationChanged;
         _viewport.ModeChanged -= OnViewportModeChanged;
         _viewport.CurrentImageChanged -= OnCurrentImageChanged;
+        _viewport.ScaleModeChanged -= OnScaleModeChanged;
     }
 }

@@ -1,3 +1,5 @@
+using Avalonia.Controls.Primitives;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -43,10 +45,35 @@ public sealed partial class SingleImageViewModel : ObservableObject, IDisposable
         _viewport.CurrentImageChanged += OnViewportChanged;
         _store.ImagesReset += OnViewportChanged;
         _store.FullImageChanged += OnStoreFullImageChanged;
+        _viewport.ScaleModeChanged += OnScaleModeChanged;
         Refresh();
     }
 
     public bool HasError => ErrorMessage is not null;
+
+    /// <summary>Image scaling for <see cref="IViewportModeService.ScaleMode"/> (display only).</summary>
+    public Stretch ImageStretch => _viewport.ScaleMode switch
+    {
+        ViewportScaleMode.StretchToFill => Stretch.Fill,
+        ViewportScaleMode.ActualSize => Stretch.None,
+        _ => Stretch.Uniform,
+    };
+
+    public StretchDirection ImageStretchDirection => _viewport.ScaleMode == ViewportScaleMode.FitWithoutEnlarging
+        ? StretchDirection.DownOnly
+        : StretchDirection.Both;
+
+    /// <summary>Only Actual Size scrolls; the other modes constrain the image to the viewport.</summary>
+    public ScrollBarVisibility ScrollBarVisibility => _viewport.ScaleMode == ViewportScaleMode.ActualSize
+        ? ScrollBarVisibility.Auto
+        : ScrollBarVisibility.Disabled;
+
+    private void OnScaleModeChanged(object? sender, ViewportScaleMode e)
+    {
+        OnPropertyChanged(nameof(ImageStretch));
+        OnPropertyChanged(nameof(ImageStretchDirection));
+        OnPropertyChanged(nameof(ScrollBarVisibility));
+    }
 
     public bool CanGoPrevious => IsActive && _viewport.CanMovePrevious;
 
@@ -114,5 +141,6 @@ public sealed partial class SingleImageViewModel : ObservableObject, IDisposable
         _viewport.CurrentImageChanged -= OnViewportChanged;
         _store.ImagesReset -= OnViewportChanged;
         _store.FullImageChanged -= OnStoreFullImageChanged;
+        _viewport.ScaleModeChanged -= OnScaleModeChanged;
     }
 }

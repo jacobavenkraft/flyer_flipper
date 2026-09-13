@@ -381,6 +381,146 @@ public class ImageStoreTests
         Assert.True(sawCancellation);
     });
 
+    // ---- Re-processing on settings change (Slice 5) ------------------------------------------------
+
+    /// <summary>
+    /// Configurable processor whose output width encodes the settings version (20 + version), small enough
+    /// that thumbnails keep the same size — so every stored image reveals which settings produced it.
+    /// </summary>
+    private sealed class VersionedProcessor : IConfigurableImageProcessor
+    {
+        private volatile int _version;
+
+        public int Order => 0;
+
+        public event EventHandler? SettingsChanged;
+
+        public void SetVersion(int version)
+        {
+            _version = version;
+            SettingsChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public ProcessedImage Process(ProcessedImage input, CancellationToken cancellationToken)
+            => input with { Buffer = Pipeline.TestImages.Buffer(20 + _version, 10) };
+    }
+
+    private static List<FakeDisplayImage> HeldImages(Fixture f)
+        => Enumerable.Range(0, f.Store.Images.Count)
+            .SelectMany(i => new[] { f.Store.GetThumbnail(i).Image, f.Store.GetFullImage(i).Image })
+            .OfType<FakeDisplayImage>()
+            .ToList();
+
+    [Fact]
+    public void SettingsChange_RegeneratesEveryThumbnail_AndDisposesTheOldOnes() => SingleThreadedContext.Run(async () =>
+    {
+        var processor = new VersionedProcessor();
+        using var f = new Fixture(maxConcurrentThumbnails: 2, processor);
+        await f.LoadFolderAsync(4);
+        await f.AllThumbnailsSettledAsync();
+        var original = Enumerable.Range(0, 4).Select(i => f.Store.GetThumbnail(i).Image!).ToList();
+        Assert.All(original, image => Assert.Equal(20, image.Width));
+
+        processor.SetVersion(1);
+        await SingleThreadedContext.WaitUntilAsync(() => Enumerable.Range(0, 4).All(i =>
+            f.Store.GetThumbnail(i) is { State: ImageLoadState.Ready, Image.Width: 21 }));
+
+        Assert.All(original, image => Assert.True(image.IsDisposed));
+        Assert.All(Enumerable.Range(0, 4), i => Assert.Equal(2, f.Loader.Started(f[i])));
+    });
+
+    [Fact]
+    public void SettingsChange_KeepsStaleThumbnailVisible_UntilItsReplacementIsReady() => SingleThreadedContext.Run(async () =>
+    {
+        var processor = new VersionedProcessor();
+        using var f = new Fixture(maxConcurrentThumbnails: 1, processor);
+        var images = Fixture.References(2);
+        await f.LoadFolderAsync(images);
+        await f.AllThumbnailsSettledAsync();
+        var stale = f.Store.GetThumbnail(1).Image!;
+        f.Loader.Close(images[1]);
+
+        processor.SetVersion(1);
+        await SingleThreadedContext.WaitUntilAsync(() => f.Loader.Started(images[1]) == 2);
+
+        var refreshing = f.Store.GetThumbnail(1);
+        Assert.Equal(ImageLoadState.Loading, refreshing.State);
+        Assert.Same(stale, refreshing.Image);
+        Assert.False(stale.IsDisposed);
+
+        f.Loader.Open(images[1]);
+        await SingleThreadedContext.WaitUntilAsync(() => f.Store.GetThumbnail(1).State == ImageLoadState.Ready);
+        Assert.Equal(21, f.Store.GetThumbnail(1).Image!.Width);
+        Assert.True(stale.IsDisposed);
+    });
+
+    [Fact]
+    public void SettingsChange_InSingleMode_ReloadsWindow_KeepingCurrentImageVisible() => SingleThreadedContext.Run(async () =>
+    {
+        var processor = new VersionedProcessor();
+        using var f = new Fixture(maxConcurrentThumbnails: 2, processor);
+        var images = Fixture.References(4);
+        await f.LoadFolderAsync(images);
+        await f.AllThumbnailsSettledAsync();
+        f.Viewport.ShowSingle(1);
+        await SingleThreadedContext.WaitUntilAsync(() => f.FullIndices(ImageLoadState.Ready).Length == 3);
+        var displayed = f.Store.GetFullImage(1).Image!;
+        f.Loader.Close(images[1]);
+
+        processor.SetVersion(1);
+
+        var reloading = f.Store.GetFullImage(1);
+        Assert.Equal(ImageLoadState.Loading, reloading.State);
+        Assert.Same(displayed, reloading.Image);
+
+        await SingleThreadedContext.WaitUntilAsync(() => f.Store.GetFullImage(0).Image?.Width == 21 && f.Store.GetFullImage(2).Image?.Width == 21);
+        Assert.False(displayed.IsDisposed);
+
+        f.Loader.Open(images[1]);
+        await SingleThreadedContext.WaitUntilAsync(() => f.Store.GetFullImage(1) is { State: ImageLoadState.Ready, Image.Width: 21 });
+        await f.AllThumbnailsSettledAsync();
+        Assert.True(displayed.IsDisposed);
+        Assert.All(Enumerable.Range(0, 4), i => Assert.Equal(21, f.Store.GetThumbnail(i).Image!.Width));
+    });
+
+    [Fact]
+    public void RapidSettingsChanges_EndOnLatestSettings_AndLeakNothing() => SingleThreadedContext.Run(async () =>
+    {
+        var processor = new VersionedProcessor();
+        using var f = new Fixture(maxConcurrentThumbnails: 2, processor);
+        await f.LoadFolderAsync(6);
+        await f.AllThumbnailsSettledAsync();
+        f.Viewport.ShowSingle(3);
+        await SingleThreadedContext.WaitUntilAsync(() => f.FullIndices(ImageLoadState.Ready).Length == 3);
+
+        processor.SetVersion(1);
+        await Task.Delay(1);
+        processor.SetVersion(2);
+        processor.SetVersion(3);
+
+        await SingleThreadedContext.WaitUntilAsync(() =>
+            Enumerable.Range(0, 6).All(i => f.Store.GetThumbnail(i) is { State: ImageLoadState.Ready, Image.Width: 23 })
+            && new[] { 2, 3, 4 }.All(i => f.Store.GetFullImage(i) is { State: ImageLoadState.Ready, Image.Width: 23 }));
+        await Task.Delay(100); // let any superseded decodes finish and be discarded
+
+        var held = HeldImages(f);
+        Assert.Equal(9, held.Count);
+        Assert.All(held, image => Assert.False(image.IsDisposed));
+        Assert.All(f.Factory.Created.Except(held), image => Assert.True(image.IsDisposed));
+    });
+
+    [Fact]
+    public void SettingsChange_WithoutImages_DoesNothing() => SingleThreadedContext.Run(async () =>
+    {
+        var processor = new VersionedProcessor();
+        using var f = new Fixture(maxConcurrentThumbnails: 2, processor);
+
+        processor.SetVersion(1);
+        await Task.Delay(20);
+
+        Assert.Equal(0, f.Loader.TotalStarted);
+    });
+
     private sealed class SlowProcessor(ManualResetEventSlim entered, Action<bool> finished) : IImageProcessor
     {
         public int Order => 0;

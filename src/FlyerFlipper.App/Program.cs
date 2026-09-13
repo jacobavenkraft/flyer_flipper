@@ -2,14 +2,14 @@ using Avalonia;
 using FlyerFlipper.Core.Application;
 using FlyerFlipper.Core.Layout;
 using FlyerFlipper.Core.Pipeline;
+using FlyerFlipper.Core.Processors;
 using FlyerFlipper.Core.Source;
 using FlyerFlipper.Core.Viewport;
 using FlyerFlipper.Imaging.DependencyInjection;
-#if DEBUG
 using FlyerFlipper.Imaging.Processors;
-#endif
 using FlyerFlipper.Infrastructure.DependencyInjection;
 using FlyerFlipper.UI.DependencyInjection;
+using FlyerFlipper.UI.Processors;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -31,7 +31,16 @@ internal static class Program
         builder.Services.AddFlyerFlipperImaging();
         builder.Services.AddFlyerFlipperUi();
 
-        // Processors (IImageProcessor), resolved by the pipeline in Order sequence.
+        // Processors (IImageProcessor), resolved by the pipeline in Order sequence. Each configurable
+        // processor is paired with a settings object (shared with its tab) and an IProcessorControlProvider.
+        builder.Services.AddSingleton(new ProcessorSettings<GrayscaleOptions>(new GrayscaleOptions()));
+        builder.Services.AddSingleton<IImageProcessor, GrayscaleProcessor>();
+        builder.Services.AddSingleton<IProcessorControlProvider, GrayscaleControlProvider>();
+
+        builder.Services.AddSingleton(new ProcessorSettings<ResizeOptions>(new ResizeOptions()));
+        builder.Services.AddSingleton<IImageProcessor, ResizeProcessor>();
+        builder.Services.AddSingleton<IProcessorControlProvider, ResizeControlProvider>();
+
 #if DEBUG
         builder.Services.AddSingleton<IImageProcessor, DiagnosticLoggingProcessor>();
 #endif

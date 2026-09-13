@@ -40,10 +40,19 @@
   </UserControl.Styles>
 
   <Panel Background="{DynamicResource SystemChromeMediumLowColor}">
-    <Image Source="{Binding Image}"
-           Stretch="Uniform"
-           Margin="16"
-           RenderOptions.BitmapInterpolationMode="HighQuality"/>
+    <!-- Scroll bars are Disabled (image constrained to the viewport) except in Actual Size mode. -->
+    <ScrollViewer x:Name="ImageScroller"
+                  HorizontalScrollBarVisibility="{Binding ScrollBarVisibility}"
+                  VerticalScrollBarVisibility="{Binding ScrollBarVisibility}">
+      <Image x:Name="DisplayedImage"
+             Source="{Binding Image}"
+             Stretch="{Binding ImageStretch}"
+             StretchDirection="{Binding ImageStretchDirection}"
+             HorizontalAlignment="Center"
+             VerticalAlignment="Center"
+             Margin="16"
+             RenderOptions.BitmapInterpolationMode="HighQuality"/>
+    </ScrollViewer>
 
     <ProgressBar IsIndeterminate="True"
                  IsVisible="{Binding IsLoading}"

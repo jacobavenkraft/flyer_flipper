@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FlyerFlipper.UI.ViewModels"
+             x:Class="FlyerFlipper.UI.Views.ProcessorTabHost"
+             x:DataType="vm:ProcessorTabHostViewModel">
+
+  <TabControl x:Name="Tabs"
+              ItemsSource="{Binding Tabs}"
+              SelectedIndex="{Binding SelectedIndex}"
+              IsVisible="{Binding HasTabs}"
+              Padding="0">
+    <TabControl.ItemTemplate>
+      <DataTemplate x:DataType="vm:ProcessorTab">
+        <TextBlock Text="{Binding Header}" FontSize="14"/>
+      </DataTemplate>
+    </TabControl.ItemTemplate>
+    <TabControl.ContentTemplate>
+      <DataTemplate x:DataType="vm:ProcessorTab">
+        <ContentControl Content="{Binding Content}"/>
+      </DataTemplate>
+    </TabControl.ContentTemplate>
+  </TabControl>
+
+</UserControl>

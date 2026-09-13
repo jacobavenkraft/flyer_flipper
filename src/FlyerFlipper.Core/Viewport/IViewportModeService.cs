@@ -21,7 +21,14 @@ public interface IViewportModeService
 
     bool CanMoveNext { get; }
 
+    /// <summary>How single view scales the image to the viewport (display only).</summary>
+    ViewportScaleMode ScaleMode { get; }
+
     event EventHandler<ViewportMode>? ModeChanged;
+
+    event EventHandler<ViewportScaleMode>? ScaleModeChanged;
+
+    void SetScaleMode(ViewportScaleMode scaleMode);
 
     /// <summary>
     /// Raised when <see cref="CurrentIndex"/> changes or the catalog is replaced (the current

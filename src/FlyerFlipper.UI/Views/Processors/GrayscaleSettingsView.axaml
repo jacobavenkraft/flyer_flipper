@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FlyerFlipper.UI.ViewModels.Processors"
+             x:Class="FlyerFlipper.UI.Views.Processors.GrayscaleSettingsView"
+             x:DataType="vm:GrayscaleSettingsViewModel">
+
+  <StackPanel Spacing="6" Margin="0,8,0,0">
+    <CheckBox Content="Convert to grayscale" IsChecked="{Binding Enabled}"/>
+    <TextBlock Text="Uses Rec. 709 luminance weights."
+               Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+  </StackPanel>
+
+</UserControl>

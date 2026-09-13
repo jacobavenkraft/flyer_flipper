@@ -4,6 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:FlyerFlipper.UI.ViewModels"
         xmlns:views="using:FlyerFlipper.UI.Views"
+        xmlns:viewport="using:FlyerFlipper.Core.Viewport"
         mc:Ignorable="d"
         x:Class="FlyerFlipper.UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -32,6 +33,26 @@
         <MenuItem Header="Toggle _Viewport Mode (Grid / Single Image)"
                   Command="{Binding ToggleViewportModeCommand}"
                   InputGesture="Ctrl+Shift+V"/>
+        <Separator/>
+        <!-- Display-only scaling of the single-image view (decision 15d). -->
+        <MenuItem x:Name="ImageScalingMenu" Header="Image _Scaling">
+          <MenuItem Header="_Fit to Window" ToggleType="Radio" GroupName="ImageScaling"
+                    IsChecked="{Binding IsScaleFitToWindow, Mode=OneWay}"
+                    Command="{Binding SetScaleModeCommand}"
+                    CommandParameter="{x:Static viewport:ViewportScaleMode.FitToWindow}"/>
+          <MenuItem Header="Fit _without Enlarging" ToggleType="Radio" GroupName="ImageScaling"
+                    IsChecked="{Binding IsScaleFitWithoutEnlarging, Mode=OneWay}"
+                    Command="{Binding SetScaleModeCommand}"
+                    CommandParameter="{x:Static viewport:ViewportScaleMode.FitWithoutEnlarging}"/>
+          <MenuItem Header="_Stretch to Fill" ToggleType="Radio" GroupName="ImageScaling"
+                    IsChecked="{Binding IsScaleStretchToFill, Mode=OneWay}"
+                    Command="{Binding SetScaleModeCommand}"
+                    CommandParameter="{x:Static viewport:ViewportScaleMode.StretchToFill}"/>
+          <MenuItem Header="_Actual Size" ToggleType="Radio" GroupName="ImageScaling"
+                    IsChecked="{Binding IsScaleActualSize, Mode=OneWay}"
+                    Command="{Binding SetScaleModeCommand}"
+                    CommandParameter="{x:Static viewport:ViewportScaleMode.ActualSize}"/>
+        </MenuItem>
       </MenuItem>
       <MenuItem Header="_Help">
         <MenuItem Header="_About" Command="{Binding AboutCommand}"/>
@@ -46,7 +67,11 @@
               Width="{Binding ControlsWidth}"
               MinHeight="120" MinWidth="240"
               Padding="16">
-        <views:ImageSourceView DataContext="{Binding ImageSource}"/>
+        <!-- Folder input stays above the processor tabs (decision 15a). -->
+        <DockPanel LastChildFill="True">
+          <views:ImageSourceView DockPanel.Dock="Top" DataContext="{Binding ImageSource}"/>
+          <views:ProcessorTabHost Margin="0,12,0,0" DataContext="{Binding ProcessorTabs}"/>
+        </DockPanel>
       </Border>
 
       <!-- Visibility lives on wrapper panels: a child's own bindings resolve against its child DataContext. -->

@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FlyerFlipper.UI.ViewModels.Processors"
+             x:Class="FlyerFlipper.UI.Views.Processors.ResizeSettingsView"
+             x:DataType="vm:ResizeSettingsViewModel">
+
+  <StackPanel Spacing="6" Margin="0,8,0,0">
+    <CheckBox Content="Shrink to fit" IsChecked="{Binding Enabled}"/>
+
+    <WrapPanel Orientation="Horizontal">
+      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,6">
+        <TextBlock Text="Max width" VerticalAlignment="Center" MinWidth="72"/>
+        <NumericUpDown x:Name="MaxWidthInput"
+                       Value="{Binding MaxWidth, UpdateSourceTrigger=LostFocus}"
+                       Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
+                       Increment="10" FormatString="0" Width="130"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,6">
+        <TextBlock Text="Max height" VerticalAlignment="Center" MinWidth="72"/>
+        <NumericUpDown x:Name="MaxHeightInput"
+                       Value="{Binding MaxHeight, UpdateSourceTrigger=LostFocus}"
+                       Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
+                       Increment="10" FormatString="0" Width="130"/>
+      </StackPanel>
+    </WrapPanel>
+
+    <TextBlock Text="Keeps aspect ratio; smaller images are left unchanged."
+               Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+  </StackPanel>
+
+</UserControl>

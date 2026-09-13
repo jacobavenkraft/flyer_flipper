@@ -13,11 +13,12 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 **.NET 10 migration: DONE — approved** (commit `7207f3d`).
 **Slice 3: DONE — approved** (commits `a9dfade`, fixes `f281bc9`).
 **Slice 4a (hybrid image store refactor): DONE — approved** (commit `88128bc`).
-**Slice 4b (pipeline pass-through): code + automated verification DONE; manual verification (STOP gate) PENDING USER.** Uncommitted.
+**Slice 4b (pipeline pass-through): DONE — approved** (commit `24abec8`).
+**Slice 5 (processor tabs + grayscale + resize + image scaling): code + automated verification DONE; manual verification (STOP gate) PENDING USER.** Uncommitted. Design choices: PLAN.md decision 15.
 
 Design decided before Slice 4 (PLAN.md decision 14): hybrid store — thumbnails for all images, full-size sliding window (current ± 1) loaded only in single view, no byte budget. Original Slice 4 split into 4a (store, no behavior change) and 4b (pipeline pass-through inside the store).
 
-Do not begin Slice 5 until the user explicitly approves Slice 4b.
+Do not begin Slice 6 until the user explicitly approves Slice 5.
 
 ---
 
@@ -302,7 +303,7 @@ Both regression tests were confirmed to fail with the fix temporarily reverted (
 
 ---
 
-## Manual verification — Slice 4b (STOP gate — awaiting user)
+## Manual verification checklist — Slice 4b (approved)
 
 **How to build & run (Debug, so the logging processor is registered):**
 ```powershell
@@ -329,17 +330,95 @@ Log lines go to standard output via the console logger (and to the IDE's Debug O
 | 3 | completed | `DiagnosticLoggingProcessor` (Imaging) + Debug-only registration; pipeline DI registration |
 | 4 | completed | Tests: pipeline, processed image, logging processor, store+pipeline; mutation checks |
 | 5 | completed | Verify: build (Release+Debug), tests, AOT publish, smoke test, end-to-end log check via UI Automation |
-| 6 | in_progress | Hand off Slice 4b for manual verification |
+| 6 | completed | Hand off Slice 4b for manual verification (approved; committed `24abec8`) |
 
 ---
 
-## What's next — Slice 5 preview (do not start until Slice 4b approved)
+## Slice 5 — what shipped
 
-From `PLAN.md § Slice 5`:
-- Controls region becomes a `TabControl` populated from `IProcessorControlProvider` implementations resolved from DI (the folder input presumably becomes the first tab or stays above the tabs — confirm with user).
-- `GrayscaleProcessor` (SkiaSharp `SKColorFilter`) with an enable checkbox; `ResizeProcessor` (`SKBitmap.Resize`) with target-dimension inputs.
-- Processor setting changes trigger re-processing with cancellation of in-flight work — in the store: needs a "processing settings changed" signal that re-generates thumbnails and the full-size window.
-- Decide (PLAN.md Future enhancements): keep decoded originals for the full-size window so single view re-processes instantly on setting changes.
+Design decisions made with the user before coding (PLAN.md decision 15): folder input above the tabs; settings apply on commit; `IProcessorControlProvider` in UI; View → Image Scaling (display only); Resize = fit inside, never enlarge; no cached originals yet. Resize *output* modes deferred to Future enhancements (possibly as a separate "Resizing" processor/plugin).
+
+**Core:**
+- `Pipeline/ProcessorSettings<TOptions>` — holder for an immutable options record: `Current` (volatile read, any thread), `Update` (no-op + no event when equal), `Changed`.
+- `Pipeline/IConfigurableImageProcessor : IImageProcessor` — adds `SettingsChanged`. `ImageProcessingPipeline` forwards any configurable processor's event as `IImageProcessingPipeline.SettingsChanged` (and unsubscribes on `Dispose`).
+- `Processors/GrayscaleOptions(Enabled)`, `Processors/ResizeOptions(Enabled, MaxWidth = 800, MaxHeight = 800)` (validated 1–20 000), `Processors/ProcessorOrder` (Grayscale = 100, Resize = 200).
+- `Imaging/ThumbnailSizing.FitWithin(w, h, maxW, maxH)`; `Fit` now delegates to it.
+- `Viewport/ViewportScaleMode` (`FitToWindow` default, `FitWithoutEnlarging`, `StretchToFill`, `ActualSize`) + `IViewportModeService.ScaleMode` / `ScaleModeChanged` / `SetScaleMode`.
+- `Store/ImageStore` — **re-processing:** a processing *generation* counter bumps on `pipeline.SettingsChanged`. The full-size window reloads first (each load supersedes the previous one), then a new thumbnail pass (its own cancellation, replacing the old pass) regenerates every thumbnail not yet produced for the current generation. `ImageSlot.Refreshing(stale)` keeps the previous image visible (state `Loading`) until the replacement is ready; the stale image is disposed after the change event. Full-size loads still supply missing/stale thumbnails.
+
+**Imaging — `Processors/`:**
+- `GrayscaleProcessor` — `SKColorFilter` color matrix with Rec. 709 luma (0.2126 / 0.7152 / 0.0722), alpha preserved; shared static filter; pass-through (same instance) when disabled.
+- `ResizeProcessor` — `SKBitmap.Resize(..., High)` to `FitWithin` the max box; pass-through when disabled or already inside. Only raises `SettingsChanged` when output can change (editing dimensions while disabled doesn't reprocess the folder).
+
+**UI:**
+- `Processors/IProcessorControlProvider` (`Header`, `Order`, `CreateControl()`), `GrayscaleControlProvider`, `ResizeControlProvider`.
+- `ViewModels/ProcessorTabHostViewModel` (tabs sorted by `Order`, created lazily on the UI thread) + `Views/ProcessorTabHost` (`TabControl`).
+- `ViewModels/Processors/GrayscaleSettingsViewModel`, `ResizeSettingsViewModel` — write options on commit; **follow external settings changes** (found via screenshots: tabs showed stale values after settings changed in code — matters for Slice 6 restore). Resize clamps/rounds values and keeps the last valid value when a field is cleared; syncing from settings doesn't write back partial combinations.
+- `Views/Processors/GrayscaleSettingsView` (checkbox), `ResizeSettingsView` (checkbox + two `NumericUpDown`s). **Commit semantics:** a headless test showed `NumericUpDown` pushes its value on every keystroke, so bindings use `UpdateSourceTrigger=LostFocus` and code-behind pushes explicitly on Enter and after spins (buttons or arrow keys).
+- `MainWindow` — controls region is now folder input (top) + `ProcessorTabHost`; **View → Image Scaling** submenu with four radio items (`SetScaleModeCommand`, `IsScale*` checked states).
+- `SingleImageView` — image inside a `ScrollViewer`: `Stretch`/`StretchDirection` from the scale mode; scroll bars only in Actual Size. `SingleImageViewModel` exposes `ImageStretch`, `ImageStretchDirection`, `ScrollBarVisibility`.
+
+**App — `Program.cs`:** registers `ProcessorSettings<GrayscaleOptions>` + `GrayscaleProcessor` + `GrayscaleControlProvider`, and the same trio for Resize; `DiagnosticLoggingProcessor` still Debug-only. UI DI adds `ProcessorTabHostViewModel`.
+
+**Tests:** 196 total (57 new).
+- `Pipeline/ProcessorSettingsTests` — settings holder, `ResizeOptions` validation/defaults, pipeline change forwarding + dispose, `FitWithin` cases.
+- `Imaging/ProcessorImplementationTests` — grayscale: pass-through, Rec. 709 values for R/G/B/white, premultiplied alpha, input not mutated, change event; resize: pass-through, shrink keeps aspect + color, never enlarges, change event only when output can change; pipeline order grayscale → resize.
+- `Store/ImageStoreTests` (+5) — settings change regenerates every thumbnail and disposes old ones; stale thumbnail stays visible until replaced; single mode reloads the window keeping the current image visible; rapid changes end on the latest settings with no leaked images; no work without images.
+- `ViewModels/ProcessorSettingsViewModelTests` — apply, reflect, follow external changes without clobbering, dispose, clamping, cleared field.
+- `Viewport/ViewportModeServiceTests` (+3) — scale mode default/change/independence/validation.
+- Headless: `ProcessorTabsUiTests` (tab order + placement below folder input, checkbox applies immediately, typing doesn't apply until Enter, focus loss applies, spinner applies) and `ImageScalingUiTests` (each mode drives the real `Image`/`ScrollViewer`; menu radio items checked exactly for the active mode). `AppHarness` now composes the real processors, settings, and providers; its fake loader produces colored banded images.
+- Mutation checks on store re-processing: dropping the stale full image, dropping the stale thumbnail, not reloading the window, and ignoring settings changes each fail targeted tests. Removing the outdated-generation check in `OfferThumbnail` is **not** caught — that guard is currently unreachable (superseded loads/passes are discarded by their cancellation checks first) and is kept as a defensive safeguard.
+
+## Automated verification — Slice 5 (all green)
+
+- `dotnet build -c Release` and `-c Debug`: 0 warnings, 0 errors.
+- `dotnet test -c Release`: 196/196 passed.
+- AOT publish `win-x64`: clean, no warnings. Smoke test (the launched process only): Release exe — now containing the real processors — launches, closes with exit code 0. Processing itself was not exercised under AOT (no further GUI automation on the user's machine).
+- Headless Skia screenshots (scratch project): color grid → grayscale grid after enabling; Resize tab reflecting enabled 30×30; single view Actual Size (tiny 23×30 result) vs Fit to Window; horizontal layout with folder input + tabs in the side panel.
+
+---
+
+## Manual verification — Slice 5 (STOP gate — awaiting user)
+
+**How to build & run:**
+```powershell
+cd D:\001_source\flyer_flipper
+dotnet run --project src/FlyerFlipper.App
+```
+
+**What to check:**
+- Controls region: folder input on top, **Grayscale** and **Resize** tabs below (both orientations).
+- **Grayscale:** ticking the checkbox re-processes immediately — thumbnails update progressively (old thumbnail stays visible with a spinner until replaced); single view shows the grayscale result; unticking restores color.
+- **Resize:** tick *Shrink to fit*, set max width/height. Typing a number does nothing until Enter or leaving the field; spinner arrows apply each step. Effect is easiest to see with **View → Image Scaling → Actual Size** (image shrinks to the box) — in Fit to Window it just looks softer.
+- **View → Image Scaling:** Fit to Window / Fit without Enlarging / Stretch to Fill / Actual Size change only how single view displays the image (Actual Size scrolls when larger than the viewport); the checked item follows the active mode; thumbnails are unaffected.
+- Changing settings while in single view: current image stays on screen until its reprocessed version replaces it; stepping left/right shows reprocessed neighbours.
+- Rapidly toggling settings on a large folder: ends on the latest settings, app stays responsive.
+- Review: the provider seam (`UI/Processors/*`, `ProcessorTabHost`), `ProcessorSettings<T>` + `IConfigurableImageProcessor`, the store's generation-based re-processing, and the two processors.
+
+---
+
+## Task snapshot (Slice 5)
+
+| # | Status | Task |
+|---|--------|------|
+| 1 | completed | Design questions with user; PLAN.md decision 15, Slice 5 text, future enhancement (resize output modes) |
+| 2 | completed | Core: settings holder, configurable processor + pipeline change signal, options, `FitWithin`, scale mode |
+| 3 | completed | Store: generation-based re-processing keeping stale images visible |
+| 4 | completed | Imaging: `GrayscaleProcessor`, `ResizeProcessor` |
+| 5 | completed | UI: provider seam, tab host, settings tabs with commit semantics, Image Scaling menu, single view scaling |
+| 6 | completed | Composition root registrations |
+| 7 | completed | Tests (unit, store, headless UI); fixes found by tests/screenshots (NumericUpDown commit, tab VM sync); mutation checks |
+| 8 | completed | Verify: builds, tests, AOT publish, smoke test, screenshots |
+| 9 | in_progress | Hand off Slice 5 for manual verification |
+
+---
+
+## What's next — Slice 6 preview (do not start until Slice 5 approved)
+
+From `PLAN.md § Slice 6`:
+- `ISettingsStore` backed by JSON (`%APPDATA%/FlyerFlipper/settings.json` / `~/.config/FlyerFlipper/settings.json`) with `System.Text.Json` source generators.
+- Persist and restore: last folder, layout orientation, active tab, viewport mode, viewed image index.
+- Likely also (confirm with user): image scaling mode and processor settings (`GrayscaleOptions`, `ResizeOptions`) — the settings view models already follow external changes, so restoring them is straightforward.
 
 ---
 
@@ -347,5 +426,5 @@ From `PLAN.md § Slice 5`:
 
 1. Read this file, then `PLAN.md`.
 2. Read the memory index at `C:\Users\jacob\.claude\projects\D--001-source\memory\MEMORY.md`.
-3. Check whether the user has approved Slice 4b. If not, ask.
-4. Slice 5 begins only after that approval.
+3. Check whether the user has approved Slice 5. If not, ask.
+4. Slice 6 begins only after that approval.

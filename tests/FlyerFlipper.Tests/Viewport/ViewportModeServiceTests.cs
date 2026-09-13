@@ -229,6 +229,42 @@ public class ViewportModeServiceTests
     }
 
     [Fact]
+    public void ScaleMode_DefaultsToFitToWindow_AndRaisesOnlyOnChange()
+    {
+        var service = CreateWithImages(1);
+        var raised = new List<ViewportScaleMode>();
+        service.ScaleModeChanged += (_, mode) => raised.Add(mode);
+
+        Assert.Equal(ViewportScaleMode.FitToWindow, service.ScaleMode);
+        service.SetScaleMode(ViewportScaleMode.FitToWindow);
+        service.SetScaleMode(ViewportScaleMode.ActualSize);
+        service.SetScaleMode(ViewportScaleMode.ActualSize);
+
+        Assert.Equal(ViewportScaleMode.ActualSize, service.ScaleMode);
+        Assert.Equal([ViewportScaleMode.ActualSize], raised);
+    }
+
+    [Fact]
+    public void ScaleMode_IsIndependentOfViewportModeAndFolder()
+    {
+        var service = CreateWithImages(3);
+        service.SetScaleMode(ViewportScaleMode.StretchToFill);
+
+        service.ShowSingle(1);
+        ReplaceCatalog(0);
+
+        Assert.Equal(ViewportScaleMode.StretchToFill, service.ScaleMode);
+    }
+
+    [Fact]
+    public void ScaleMode_UndefinedValue_Throws()
+    {
+        var service = CreateWithImages(1);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => service.SetScaleMode((ViewportScaleMode)42));
+    }
+
+    [Fact]
     public void Dispose_UnsubscribesFromCatalog()
     {
         var service = CreateWithImages(5);

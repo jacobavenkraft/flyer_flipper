@@ -25,7 +25,27 @@ public sealed class ViewportModeService : IViewportModeService, IDisposable
 
     public bool CanMoveNext => CurrentIndex >= 0 && CurrentIndex < ImageCount - 1;
 
+    public ViewportScaleMode ScaleMode { get; private set; } = ViewportScaleMode.FitToWindow;
+
     public event EventHandler<ViewportMode>? ModeChanged;
+
+    public event EventHandler<ViewportScaleMode>? ScaleModeChanged;
+
+    public void SetScaleMode(ViewportScaleMode scaleMode)
+    {
+        if (!Enum.IsDefined(scaleMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(scaleMode), scaleMode, null);
+        }
+
+        if (ScaleMode == scaleMode)
+        {
+            return;
+        }
+
+        ScaleMode = scaleMode;
+        ScaleModeChanged?.Invoke(this, scaleMode);
+    }
 
     public event EventHandler? CurrentImageChanged;
 

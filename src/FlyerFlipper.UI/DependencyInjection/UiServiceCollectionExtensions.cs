@@ -19,6 +19,7 @@ public static class UiServiceCollectionExtensions
         services.AddSingleton<ImageSourceViewModel>();
         services.AddSingleton<ThumbnailGridViewModel>();
         services.AddSingleton<SingleImageViewModel>();
+        services.AddSingleton<ProcessorTabHostViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<MainWindow>();
         return services;

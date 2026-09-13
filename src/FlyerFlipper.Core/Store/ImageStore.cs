@@ -22,6 +22,13 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
     private readonly ImageStoreOptions _options;
 
     private Session _session;
+
+    /// <summary>
+    /// Processing generation: bumped whenever processor settings change. A slot produced under an older
+    /// generation is stale and gets regenerated.
+    /// </summary>
+    private int _generation;
+
     private bool _disposed;
 
     public ImageStore(
@@ -41,10 +48,12 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
         _factory = factory;
         _options = options ?? new ImageStoreOptions();
 
-        _session = StartSession();
+        _session = new Session(_catalog.Images);
+        StartThumbnailPass(_session);
         _catalog.ImagesChanged += OnCatalogImagesChanged;
         _viewport.ModeChanged += OnViewportModeChanged;
         _viewport.CurrentImageChanged += OnViewportCurrentImageChanged;
+        _pipeline.SettingsChanged += OnPipelineSettingsChanged;
         UpdateWindow();
     }
 
@@ -66,7 +75,7 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
     {
         var previous = _session;
         previous.Cancellation.Cancel();
-        _session = StartSession();
+        _session = new Session(_catalog.Images);
 
         ImagesReset?.Invoke(this, EventArgs.Empty);
 
@@ -76,6 +85,7 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
             DisposeImage(entry.Full.Image);
         }
 
+        StartThumbnailPass(_session);
         UpdateWindow();
     }
 
@@ -83,16 +93,25 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
 
     private void OnViewportCurrentImageChanged(object? sender, EventArgs e) => UpdateWindow();
 
-    private Session StartSession()
+    /// <summary>
+    /// Processor settings changed: every processed image is stale. Reload the full-size window first
+    /// (it has priority), then regenerate all thumbnails. Current images stay visible until replaced.
+    /// </summary>
+    private void OnPipelineSettingsChanged(object? sender, EventArgs e)
     {
-        var images = _catalog.Images;
-        var session = new Session(images, images.Select(static r => new Entry(r)).ToArray());
-        if (session.Entries.Length > 0)
+        if (_disposed)
         {
-            _ = GenerateThumbnailsAsync(session);
+            return;
         }
 
-        return session;
+        _generation++;
+        var session = _session;
+        foreach (var index in session.WindowIndices.ToList())
+        {
+            _ = LoadFullAsync(session, index);
+        }
+
+        StartThumbnailPass(session);
     }
 
     // ---- Full-size sliding window -------------------------------------------------------------
@@ -147,23 +166,23 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
         entry.FullLoad?.Cancel();
         entry.FullLoad = null;
 
-        var previous = entry.Full;
-        entry.Full = ImageSlot<TImage>.NotLoaded;
-        FullImageChanged?.Invoke(this, index);
-        DisposeImage(previous.Image);
+        SetFull(index, entry, ImageSlot<TImage>.NotLoaded);
     }
 
+    /// <summary>Loads (or, if already loading/loaded, re-loads) the full-size image, superseding any earlier load.</summary>
     private async Task LoadFullAsync(Session session, int index)
     {
         var entry = session.Entries[index];
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(session.Cancellation.Token);
-        entry.FullLoad = cts;
-        entry.Full = ImageSlot<TImage>.Loading;
-        session.BeginFullLoad();
-        FullImageChanged?.Invoke(this, index);
+        entry.FullLoad?.Cancel();
 
-        // A full-size decode is also the cheapest way to a missing thumbnail.
-        var wantThumbnail = entry.Thumbnail.State != ImageLoadState.Ready;
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(session.Cancellation.Token);
+        var generation = _generation;
+        entry.FullLoad = cts;
+        session.BeginFullLoad();
+        SetFull(index, entry, ImageSlot<TImage>.Refreshing(entry.Full.Image));
+
+        // A full-size decode is also the cheapest way to a missing or stale thumbnail.
+        var wantThumbnail = entry.ThumbnailGeneration != generation;
         var token = cts.Token;
 
         try
@@ -190,18 +209,17 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
 
             if (!IsLive(session) || entry.FullLoad != cts)
             {
-                // Released (or superseded) while decoding.
+                // Released, superseded by a newer load, or the folder changed while decoding.
                 DisposeImage(full);
                 DisposeImage(thumbnail);
                 return;
             }
 
-            entry.Full = ImageSlot<TImage>.Ready(full);
-            FullImageChanged?.Invoke(this, index);
+            SetFull(index, entry, ImageSlot<TImage>.Ready(full));
 
             if (thumbnail is not null)
             {
-                OfferThumbnail(session, index, thumbnail);
+                OfferThumbnail(session, index, thumbnail, generation);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -211,8 +229,7 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
         {
             if (IsLive(session) && entry.FullLoad == cts)
             {
-                entry.Full = ImageSlot<TImage>.Failed(ImageLoadErrors.Describe(entry.Reference, ex));
-                FullImageChanged?.Invoke(this, index);
+                SetFull(index, entry, ImageSlot<TImage>.Failed(ImageLoadErrors.Describe(entry.Reference, ex)));
             }
         }
         finally
@@ -226,11 +243,36 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
         }
     }
 
+    private void SetFull(int index, Entry entry, ImageSlot<TImage> slot)
+    {
+        var previous = entry.Full;
+        entry.Full = slot;
+        FullImageChanged?.Invoke(this, index);
+
+        if (!ReferenceEquals(previous.Image, slot.Image))
+        {
+            DisposeImage(previous.Image);
+        }
+    }
+
     // ---- Background thumbnails ------------------------------------------------------------------
 
-    private async Task GenerateThumbnailsAsync(Session session)
+    /// <summary>Cancels any running thumbnail pass and starts one for the current generation.</summary>
+    private void StartThumbnailPass(Session session)
     {
-        var token = session.Cancellation.Token;
+        session.ThumbnailPass?.Cancel();
+        if (session.Entries.Length == 0)
+        {
+            return;
+        }
+
+        var pass = CancellationTokenSource.CreateLinkedTokenSource(session.Cancellation.Token);
+        session.ThumbnailPass = pass;
+        _ = GenerateThumbnailsAsync(session, pass.Token, _generation);
+    }
+
+    private async Task GenerateThumbnailsAsync(Session session, CancellationToken token, int generation)
+    {
         var next = 0;
 
         async Task WorkerAsync()
@@ -247,12 +289,12 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
 
                 var index = next++;
                 var entry = session.Entries[index];
-                if (entry.Thumbnail.State == ImageLoadState.Ready)
+                if (entry.ThumbnailGeneration == generation)
                 {
-                    continue; // produced by a full-size load
+                    continue; // already produced for this generation (e.g. by a full-size load)
                 }
 
-                SetThumbnail(session, index, ImageSlot<TImage>.Loading);
+                SetThumbnail(session, index, ImageSlot<TImage>.Refreshing(entry.Thumbnail.Image));
                 try
                 {
                     var thumbnail = await Task.Run(
@@ -263,13 +305,13 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
                         },
                         token);
 
-                    if (!IsLive(session))
+                    if (!IsLive(session) || token.IsCancellationRequested)
                     {
                         DisposeImage(thumbnail);
                         return;
                     }
 
-                    OfferThumbnail(session, index, thumbnail);
+                    OfferThumbnail(session, index, thumbnail, generation);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
@@ -277,8 +319,9 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    if (IsLive(session) && entry.Thumbnail.State != ImageLoadState.Ready)
+                    if (IsLive(session) && generation == _generation && entry.ThumbnailGeneration != generation)
                     {
+                        entry.ThumbnailGeneration = generation;
                         SetThumbnail(session, index, ImageSlot<TImage>.Failed(ImageLoadErrors.Describe(entry.Reference, ex)));
                     }
                 }
@@ -292,19 +335,24 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            // Folder replaced or store disposed.
+            // Folder replaced, settings changed (a newer pass took over), or store disposed.
         }
     }
 
-    /// <summary>Stores <paramref name="thumbnail"/> unless one is already ready (then it is discarded).</summary>
-    private void OfferThumbnail(Session session, int index, TImage thumbnail)
+    /// <summary>
+    /// Stores a thumbnail produced under <paramref name="generation"/>, unless that generation is outdated
+    /// or this entry already has one for it (then it is discarded).
+    /// </summary>
+    private void OfferThumbnail(Session session, int index, TImage thumbnail, int generation)
     {
-        if (session.Entries[index].Thumbnail.State == ImageLoadState.Ready)
+        var entry = session.Entries[index];
+        if (generation != _generation || entry.ThumbnailGeneration == generation)
         {
             DisposeImage(thumbnail);
             return;
         }
 
+        entry.ThumbnailGeneration = generation;
         SetThumbnail(session, index, ImageSlot<TImage>.Ready(thumbnail));
     }
 
@@ -349,6 +397,7 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
         _catalog.ImagesChanged -= OnCatalogImagesChanged;
         _viewport.ModeChanged -= OnViewportModeChanged;
         _viewport.CurrentImageChanged -= OnViewportCurrentImageChanged;
+        _pipeline.SettingsChanged -= OnPipelineSettingsChanged;
         _session.Cancellation.Cancel();
 
         foreach (var entry in _session.Entries)
@@ -364,6 +413,9 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
 
         public ImageSlot<TImage> Thumbnail { get; set; }
 
+        /// <summary>Generation the thumbnail slot's Ready/Failed result belongs to; -1 before the first one.</summary>
+        public int ThumbnailGeneration { get; set; } = -1;
+
         public ImageSlot<TImage> Full { get; set; }
 
         /// <summary>Cancellation for the in-flight full-size load; identifies which load is current.</summary>
@@ -371,17 +423,20 @@ public sealed class ImageStore<TImage> : IImageStore<TImage>, IDisposable
     }
 
     /// <summary>Everything belonging to one catalog snapshot; replaced wholesale when the folder changes.</summary>
-    private sealed class Session(IReadOnlyList<ImageReference> images, Entry[] entries)
+    private sealed class Session(IReadOnlyList<ImageReference> images)
     {
         private int _activeFullLoads;
         private TaskCompletionSource? _fullLoadsIdle;
 
         public IReadOnlyList<ImageReference> Images { get; } = images;
 
-        public Entry[] Entries { get; } = entries;
+        public Entry[] Entries { get; } = images.Select(static r => new Entry(r)).ToArray();
 
         // Not disposed: linked load sources may still unregister from it after a folder change.
         public CancellationTokenSource Cancellation { get; } = new();
+
+        /// <summary>The running thumbnail pass (linked to <see cref="Cancellation"/>); replaced on settings changes.</summary>
+        public CancellationTokenSource? ThumbnailPass { get; set; }
 
         /// <summary>Indices in the full-size window (loading, ready, or failed).</summary>
         public HashSet<int> WindowIndices { get; } = [];
