@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:FlyerFlipper.UI.ViewModels"
+        mc:Ignorable="d"
+        x:Class="FlyerFlipper.UI.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Flyer Flipper"
+        Width="1000" Height="700"
+        MinWidth="600" MinHeight="400">
+
+  <DockPanel LastChildFill="True">
+    <Menu DockPanel.Dock="Top">
+      <MenuItem Header="_File">
+        <MenuItem Header="E_xit" Command="{Binding ExitCommand}"/>
+      </MenuItem>
+      <MenuItem Header="_View">
+        <MenuItem Header="_Toggle Orientation"
+                  Command="{Binding ToggleOrientationCommand}"
+                  InputGesture="Ctrl+Shift+O"/>
+      </MenuItem>
+      <MenuItem Header="_Help">
+        <MenuItem Header="_About" Command="{Binding AboutCommand}"/>
+      </MenuItem>
+    </Menu>
+
+    <DockPanel LastChildFill="True">
+      <Border DockPanel.Dock="{Binding ControlsDock}"
+              Background="{DynamicResource SystemChromeLowColor}"
+              BorderBrush="{DynamicResource SystemChromeDisabledLowColor}"
+              BorderThickness="{Binding ControlsBorderThickness}"
+              MinHeight="120" MinWidth="240"
+              Padding="16">
+        <TextBlock Text="Controls region (placeholder)"
+                   VerticalAlignment="Center"
+                   HorizontalAlignment="Center"
+                   FontSize="14"/>
+      </Border>
+
+      <Border Background="{DynamicResource SystemChromeMediumLowColor}"
+              Padding="16">
+        <TextBlock Text="Viewport region (placeholder)"
+                   VerticalAlignment="Center"
+                   HorizontalAlignment="Center"
+                   FontSize="14"/>
+      </Border>
+    </DockPanel>
+  </DockPanel>
+
+</Window>
