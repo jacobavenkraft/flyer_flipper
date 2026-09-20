@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
 using FlyerFlipper.UI.Settings;
+using FlyerFlipper.UI.Theming;
 using FlyerFlipper.UI.Views;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,6 +16,13 @@ public partial class App : Avalonia.Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+
+        // App.axaml asks for the OS theme. Where the OS has no answer (Linux without an XDG desktop portal, e.g.
+        // WSLg) Avalonia would quietly fall back to light; prefer dark there instead.
+        if (StartupTheme.Decide(StartupTheme.OperatingSystemReportsPreference()) == StartupThemeDecision.ForceDark)
+        {
+            RequestedThemeVariant = ThemeVariant.Dark;
+        }
     }
 
     public override void OnFrameworkInitializationCompleted()
