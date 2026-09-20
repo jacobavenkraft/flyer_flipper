@@ -38,7 +38,7 @@ public sealed class WindowPlacementTracker : IWindowPlacementSource
     /// <summary>The position handed to the window while restoring, until the origin check below has finished.</summary>
     private PixelPoint? _restoreTarget;
 
-    /// <summary>The window's own opacity, held while the window is hidden for the restore.</summary>
+    /// <summary>The window's own opacity, held while its contents are hidden for the restore.</summary>
     private double _opacityBeforeRestore = 1;
 
     public WindowPlacementTracker()
@@ -93,9 +93,15 @@ public sealed class WindowPlacementTracker : IWindowPlacementSource
         if (_restoreTarget is not null)
         {
             // A window manager that ignores the pre-show position puts the window up in the wrong place first and
-            // only then honours the restore, which reads as a visible jump. Keep it transparent until it is where
-            // it belongs. Where the pre-show position is honoured (Windows) the check passes on the first tick, so
-            // this costs one settle delay.
+            // only then honours the restore, which reads as a visible jump. Keep the contents invisible until the
+            // window is where it belongs. Where the pre-show position is honoured (Windows) the check passes on
+            // the first tick, so this costs one settle delay.
+            //
+            // This hides what the app draws, and nothing more. Under WSLg the compositor still draws a drop
+            // shadow for the mapped surface at its first position, and that shadow is not the app's to suppress:
+            // it follows the surface geometry, not its contents. Asking for a transparent surface
+            // (TransparencyLevelHint + a transparent Background) was tried and changed nothing, so it was
+            // reverted rather than left in as dead weight.
             _opacityBeforeRestore = window.Opacity;
             window.Opacity = 0;
 

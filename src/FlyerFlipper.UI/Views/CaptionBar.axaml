@@ -1,0 +1,86 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="FlyerFlipper.UI.Views.CaptionBar">
+
+  <!--
+    App-drawn title bar (decision 20). The window has SystemDecorations="None", so everything the OS
+    frame used to provide lives here. Glyphs are vector paths, not icon-font characters: Segoe MDL2
+    does not exist on Linux, and matching on both platforms is the whole point of this slice.
+  -->
+  <UserControl.Styles>
+    <Style Selector="Button.caption">
+      <Setter Property="Width" Value="46"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="CornerRadius" Value="0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.caption:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SystemChromeMediumColor}"/>
+    </Style>
+    <Style Selector="Button.close:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#C42B1C"/>
+    </Style>
+    <Style Selector="Button.caption Path">
+      <Setter Property="Stroke" Value="{DynamicResource SystemBaseHighColor}"/>
+      <Setter Property="StrokeThickness" Value="1"/>
+    </Style>
+    <Style Selector="Button.close:pointerover Path">
+      <Setter Property="Stroke" Value="White"/>
+    </Style>
+    <!-- An inactive window dims its caption, the way a native one does. -->
+    <Style Selector="Border#Root">
+      <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Border x:Name="Root"
+          BorderBrush="{DynamicResource SystemChromeDisabledLowColor}"
+          BorderThickness="0,0,0,1"
+          PointerPressed="OnCaptionPointerPressed"
+          DoubleTapped="OnCaptionDoubleTapped">
+    <Grid ColumnDefinitions="Auto,*,Auto" Height="32">
+
+      <!-- App mark: a vector placeholder, so no icon asset is needed and both platforms match. -->
+      <Canvas Grid.Column="0" Width="16" Height="16" Margin="10,0,0,0" VerticalAlignment="Center">
+        <Rectangle Canvas.Left="1" Canvas.Top="2" Width="11" Height="11"
+                   Stroke="{DynamicResource SystemAccentColor}" StrokeThickness="1.2"/>
+        <Rectangle Canvas.Left="4" Canvas.Top="5" Width="11" Height="11"
+                   Fill="{DynamicResource SystemAccentColor}" Opacity="0.55"/>
+      </Canvas>
+
+      <TextBlock x:Name="TitleText"
+                 Grid.Column="1"
+                 Margin="10,0,0,0"
+                 VerticalAlignment="Center"
+                 FontSize="12"
+                 TextTrimming="CharacterEllipsis"
+                 Foreground="{DynamicResource SystemBaseHighColor}"/>
+
+      <StackPanel Grid.Column="2" Orientation="Horizontal">
+        <Button x:Name="MinimizeButton" Classes="caption" Click="OnMinimize" ToolTip.Tip="Minimize">
+          <Path Data="M 0,0 H 10"/>
+        </Button>
+
+        <Button x:Name="MaximizeButton" Classes="caption" Click="OnToggleMaximize">
+          <Panel>
+            <!-- Maximize: one square. Restore: two, offset. Swapped in code-behind on WindowState. -->
+            <Path x:Name="MaximizeGlyph" Data="M 0,0 H 10 V 10 H 0 Z"/>
+            <Path x:Name="RestoreGlyph" IsVisible="False" Data="M 0,2.5 H 7.5 V 10 H 0 Z M 2.5,2.5 V 0 H 10 V 7.5 H 7.5"/>
+          </Panel>
+        </Button>
+
+        <Button x:Name="CloseButton" Classes="caption close" Click="OnClose" ToolTip.Tip="Close">
+          <Path Data="M 0,0 L 10,10 M 10,0 L 0,10"/>
+        </Button>
+      </StackPanel>
+    </Grid>
+  </Border>
+
+</UserControl>

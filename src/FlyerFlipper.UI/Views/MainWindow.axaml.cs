@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.Input;
+using FlyerFlipper.UI.Chrome;
 using FlyerFlipper.UI.ViewModels;
 
 namespace FlyerFlipper.UI.Views;
@@ -14,6 +15,28 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
+
+        // The window draws its own chrome (decision 20), so it also owns the resize border.
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == WindowStateProperty || e.Property == CanResizeProperty)
+            {
+                SyncResizeGrips();
+            }
+        };
+
+        SyncResizeGrips();
+    }
+
+    private void SyncResizeGrips()
+        => ResizeGrips.IsVisible = WindowChromeRules.ShowsResizeGrips(WindowState, CanResize);
+
+    private void OnResizeGripPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Control { Tag: WindowEdge edge } && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            BeginResizeDrag(edge, e);
+        }
     }
 
     public MainWindow(MainWindowViewModel viewModel) : this()

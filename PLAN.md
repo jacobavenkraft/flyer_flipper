@@ -174,9 +174,7 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - **Automated verification:** Full test suite green on Windows; both `win-x64` and `linux-x64` AOT publish clean.
 - **Manual verification (STOP — MVP acceptance):** User runs on Windows and (optionally) Linux, exercises the whole MVP flow end-to-end, formally accepts MVP.
 
-### Slice 8 — Custom window chrome (planned, not started)
-
-Per decision 20. **Blocked**: the user asked to hold this until the Slice 7 changes are approved.
+### Slice 8 — Custom window chrome (implemented; awaiting manual verification)
 
 - `SystemDecorations="None"` on `MainWindow`; custom title bar row above the existing menu bar.
 - Title bar: app icon, `Title`, and minimize / maximize-restore / close buttons, themed from the app's
@@ -235,6 +233,12 @@ Per decision 20. **Blocked**: the user asked to hold this until the Slice 7 chan
 
 Items discussed during planning but explicitly deferred out of MVP. Captured here so nothing is lost.
 
+- **Re-check the Linux startup shadow flash on a real desktop.** Under WSLg the compositor draws a drop
+  shadow for the window surface at its first position before the placement restore moves it, so a shadow
+  briefly flashes even though the window itself is hidden. It follows surface geometry, so neither
+  `Opacity` nor `TransparencyLevelHint` suppresses it (both tried). A different compositor may not draw
+  it at all. If it must be fixed, the remaining idea is to map the window at a near-zero size, position
+  it, then restore the real size — which trades the flash for a visible grow-into-place.
 - **Clamp a restored window to the screen it lands on.** `WindowPlacementTracker.Apply` clamps the saved size *upward* only (to `MinWidth`/`MinHeight`), and `IsReachable` checks only that a 120×24 strip of title bar is on a screen — never that the window *fits*. Because size is saved in device-independent pixels (correctly — see below), a window saved on a large display at 150% can be restored taller than a smaller display, leaving the bottom off-screen. Unreachable on the current single 3840×2160 monitor, so deferred: a window would need to exceed the working area after scaling. Fix would clamp width/height to the target screen's working area before applying.
 - **User-selectable theme.** A Light/Dark/System choice in the **View** menu, persisted in `settings.json` beside the other restored state. Decision 18 settled MVP behaviour (follow the OS, dark where it says nothing); this would let the user override it. The menu and the settings store already exist, so it is View-menu plumbing plus one `AppSettings` field.
 - **Rich source-selection UI.** Replace the MVP folder-path textbox with: a **Browse** button (native folder picker), a **Recursive** checkbox, a **format wildcard** input (e.g. `*.jpg;*.png`), and a **filename wildcard** input (e.g. `IMG_*`, `PIC_*`). The `IImageSource` interface already accepts these — pure UI + ViewModel work.

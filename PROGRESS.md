@@ -16,7 +16,11 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 **Slice 4b (pipeline pass-through): DONE — approved** (commit `24abec8`).
 **Slice 5 (processor tabs + grayscale + resize + image scaling): DONE — approved** (commit `086a335`). Design choices: PLAN.md decision 15.
 **Slice 6 (settings persistence): DONE — approved** (commit `69d1396`). Design choices: PLAN.md decision 16.
-**Slice 7 (polish + Linux verification): IN PROGRESS** (started 2026-09-18; resumed 2026-09-20). Linux environment: **WSL2** (user's choice), Ubuntu 26.04.1. Automated verification is **green on both platforms** — 275/275 tests on Windows and Linux, clean AOT publish for `win-x64` and `linux-x64`. The user's first Linux smoke test found two real defects (theme, window placement); both are **fixed and verified**, and it is back with the user for re-verification and MVP acceptance.
+**Slice 7 (polish + Linux verification): DONE — MVP ACCEPTED by the user 2026-09-20.**
+**Slice 8 (custom window chrome): IN PROGRESS** — implemented and green, at the manual STOP gate.
+
+Old Slice 7 status line, kept for the record:
+**Slice 7 (polish + Linux verification): WAS IN PROGRESS** (started 2026-09-18; resumed 2026-09-20). Linux environment: **WSL2** (user's choice), Ubuntu 26.04.1. Automated verification is **green on both platforms** — 275/275 tests on Windows and Linux, clean AOT publish for `win-x64` and `linux-x64`. The user's first Linux smoke test found two real defects (theme, window placement); both are **fixed and verified**, and it is back with the user for re-verification and MVP acceptance.
 
 Design decided before Slice 4 (PLAN.md decision 14): hybrid store — thumbnails for all images, full-size sliding window (current ± 1) loaded only in single view, no byte budget. Original Slice 4 split into 4a (store, no behavior change) and 4b (pipeline pass-through inside the store).
 
@@ -495,42 +499,27 @@ dotnet run --project src/FlyerFlipper.App
 
 Scope per `PLAN.md § Slice 7`: polish + Linux verification + MVP acceptance.
 
-### ⚠ Uncommitted work in the tree (as of 2026-09-18)
+### Uncommitted work in the tree (as of 2026-09-20)
 
-`HEAD` is `69d1396` (Slice 6). The Slice 7 work below is **written to disk but not committed** — a
-reboot keeps it, but a fresh session must not assume a clean tree. `git status` should show exactly:
+**Slice 7 is committed.** The user committed it on 2026-09-20 as three commits:
+`cd505b0` (theme), `53b848d` (window placement), `0b87c0c` (final cleanup). `HEAD` is `0b87c0c`.
+
+The tree now holds **Slice 8 only** (custom window chrome), written to disk and not committed:
 
 ```
  M PLAN.md
  M PROGRESS.md
- M src/FlyerFlipper.App/App.axaml.cs
- M src/FlyerFlipper.Core/Settings/WindowPlacement.cs
- M src/FlyerFlipper.Infrastructure/FlyerFlipper.Infrastructure.csproj
- M src/FlyerFlipper.Infrastructure/Source/FileSystemImageSource.cs
- M src/FlyerFlipper.UI/Settings/WindowPlacementTracker.cs
- M tests/FlyerFlipper.Tests/FlyerFlipper.Tests.csproj
- M tests/FlyerFlipper.Tests/Headless/AppHarness.cs
- M tests/FlyerFlipper.Tests/Headless/SettingsPersistenceUiTests.cs
- M tests/FlyerFlipper.Tests/Imaging/ProcessorImplementationTests.cs
- M tests/FlyerFlipper.Tests/Pipeline/DiagnosticLoggingProcessorTests.cs
- M tests/FlyerFlipper.Tests/Pipeline/ImageProcessingPipelineTests.cs
- M tests/FlyerFlipper.Tests/Pipeline/ProcessedImageTests.cs
- M tests/FlyerFlipper.Tests/Settings/WindowPlacementRulesTests.cs
- M tests/FlyerFlipper.Tests/Source/FileSystemImageSourceTests.cs
- M tests/FlyerFlipper.Tests/Source/ImageCatalogTests.cs
- M tests/FlyerFlipper.Tests/Store/ImageStoreTests.cs
- M tests/FlyerFlipper.Tests/Viewport/ViewportModeServiceTests.cs
-?? src/FlyerFlipper.UI/Theming/
-?? tests/FlyerFlipper.Tests/TestSupport/TestPaths.cs
-?? tests/FlyerFlipper.Tests/Theming/
+ M src/FlyerFlipper.UI/Views/MainWindow.axaml
+ M src/FlyerFlipper.UI/Views/MainWindow.axaml.cs
+?? src/FlyerFlipper.UI/Chrome/
+?? src/FlyerFlipper.UI/Views/CaptionBar.axaml
+?? src/FlyerFlipper.UI/Views/CaptionBar.axaml.cs
+?? tests/FlyerFlipper.Tests/Chrome/
+?? tests/FlyerFlipper.Tests/Headless/CaptionBarTests.cs
 ```
 
-(`PLAN.md` = decisions 17–19 + Slice 7 text; `PROGRESS.md` = this section. The two `Infrastructure`
-files, `FlyerFlipper.Tests.csproj` and `FileSystemImageSourceTests.cs` are the 2026-09-18 fixes. The
-test-fixture files plus untracked `TestSupport/TestPaths.cs` are the 2026-09-20 path fix. `App.axaml.cs`
-plus untracked `UI/Theming/` and `tests/.../Theming/` are the theme fix (decision 18).
-`Core/Settings/WindowPlacement.cs`, `UI/Settings/WindowPlacementTracker.cs` and
-`Settings/WindowPlacementRulesTests.cs` are the window-placement fix (decision 19).)
+It is green on both platforms (295/295, clean AOT publishes) but **not yet verified by hand** — see
+the Slice 8 section at the end of this file. Committing is the user's call, as always.
 
 > Check this list with **Windows** `git status`, not with git inside WSL. The repo lives on `/mnt/d`
 > and is checked out CRLF, but WSL's git has its own `core.autocrlf` setting, so from the distro it
@@ -853,10 +842,11 @@ formal MVP acceptance. Do not start new work until they report back.
 2. Read the memory index at `C:\Users\jacob\.claude\projects\D--001-source\memory\MEMORY.md`.
    The per-slice manual verification gate (`feedback_per_slice_manual_verification.md`) governs how
    Slice 7 ends: hand off, then STOP for the user's MVP acceptance.
-3. Slices 1–6 are approved and committed (`HEAD` = `69d1396`). **Slice 7 is in progress with
-   uncommitted changes in the tree** — see the "⚠ Uncommitted work" block above and confirm
-   `git status` matches before doing anything else.
-4. Re-establish the baseline on Windows: `dotnet test -c Release` should report **252/252**.
+3. Slices 1–7 are approved and committed (`HEAD` = `0b87c0c`); the MVP was accepted on 2026-09-20.
+   **Slice 8 (custom window chrome) is in the tree, uncommitted, awaiting manual verification** — see
+   the "Uncommitted work" block above and the Slice 8 section at the end, and confirm `git status`
+   matches before doing anything else.
+4. Re-establish the baseline on Windows: `dotnet test -c Release` should report **295/295**.
 5. The Linux toolchain is fully set up. To confirm it survived a WSL restart:
 
    ```bash
@@ -871,7 +861,7 @@ formal MVP acceptance. Do not start new work until they report back.
      Windows `obj/bin` in the shared `/mnt/d` tree.
 6. The only open Slice 7 items are manual and belong to the user. If they have not yet reported
    smoke-test results, ask — do not start Slice 8 or any new work.
-7. Nothing in Slice 7 has been committed. Do not commit without the user asking.
+7. Slice 7 is committed; Slice 8 is not. Do not commit without the user asking.
 
 ### Open question for the user, carried over
 
@@ -882,3 +872,93 @@ formal MVP acceptance. Do not start new work until they report back.
    that approval.
 3. Carried over, non-blocking: whether to commit the Slice 7 fixes now or as a single commit after
    acceptance. Still uncommitted as of 2026-09-20.
+
+
+---
+
+## Slice 8 — custom window chrome (implemented 2026-09-20, awaiting verification)
+
+Per PLAN.md decision 20. Started only after the user accepted the MVP and approved the Slice 7 work.
+
+### What shipped
+
+- `MainWindow` sets `SystemDecorations="None"` and an explicit `Background`, so the app owns the whole
+  window. Root is now a `Panel` so the resize grips can overlay the content.
+- `UI/Views/CaptionBar.axaml[.cs]` — app-drawn title bar: vector app mark, window title, and
+  minimize / maximize-restore / close buttons, plus drag-to-move and double-click-to-maximize.
+  The maximize glyph swaps to a restore glyph, and its tooltip follows.
+- `UI/Chrome/WindowChromeRules.cs` — the two decisions worth testing on their own: `ToggleMaximized`
+  (full-screen counts as enlarged, so it restores down) and `ShowsResizeGrips`.
+- `MainWindow` resize grips: a 3×3 `Grid` of eight transparent 5px edge/corner cells, each tagged with
+  its `WindowEdge` and calling `BeginResizeDrag`. The `Grid` and its centre cell have no background, so
+  clicks in the middle fall through to the content. Hidden while maximized.
+- The menu bar keeps its own row below the title bar — merging it into the title bar was offered
+  during planning and **not** chosen.
+
+**Glyphs are vector `Path` geometry, not icon-font characters.** Segoe MDL2 does not exist on Linux,
+so a font-based caption would have looked different on each platform, defeating the point of the slice.
+
+### Verified
+
+| | Windows | Linux |
+|---|---|---|
+| Tests | **295/295** | **295/295** |
+| AOT publish | clean, no warnings | clean, no warnings |
+
+16 new tests: `WindowChromeRulesTests` (pure) and `Headless/CaptionBarTests` (title tracking, maximize
+toggle + glyph swap, minimize, close, grips hidden when maximized, all eight edges present).
+
+**Placement round trip re-verified on Linux** — this was the regression risk, since dropping system
+decorations changes the window's frame extents and the restore corrects for a frame-vs-client offset.
+Seeds `640,380` and `56,132` both round-tripped exactly over two launches each, size included.
+
+### Deliberate limitations, to raise at the gate
+
+- **Dragging a maximized window does not tear it off and restore it down.** The OS title bar does this;
+  re-implementing it well (restore under the cursor, proportional grab point) is its own piece of work.
+  Today a drag on a maximized window does nothing; double-click or the button restores it.
+- **No drop shadow or rounded corners on Windows.** Those came from the OS frame. Avalonia can be asked
+  for them, but it is a separate styling decision.
+- **Aero Snap should still work on Windows** — `BeginMoveDrag` hands off to the OS move loop — but it
+  has not been verified by hand.
+- The app mark is a **vector placeholder**, not artwork. Swapping in a real icon is a later task, and
+  would also give the window a taskbar icon.
+
+### Residual startup flash on Linux — investigated, accepted
+
+After the chrome landed, the user reported the startup jump was *nearly* gone on Linux: a brief
+border still flashed at the window manager's default spot before the window appeared in place.
+
+**Root cause, identified by the user on close inspection: it is the compositor's drop shadow.** The
+window itself stays invisible; what flashes is the shadow WSLg would draw around the frame, at the
+surface's first position. That shadow follows the **surface geometry**, not its contents, so nothing
+the app renders — or declines to render — affects it.
+
+Two fixes were tried against it and neither worked:
+
+| Attempt | Result |
+|---|---|
+| `Opacity = 0` (kept) | Hides the app's own contents. Fixed the *content* jump; the shadow remains. |
+| `Background = Transparent` + `TransparencyLevelHint = [Transparent]` | **No change. Reverted.** Asking for a transparent surface does not stop the compositor drawing a shadow for it. |
+
+The transparency attempt was reverted rather than left in: it changed nothing, and carrying two extra
+properties through save/restore is real complexity for no benefit. `Opacity = 0` stays, because it
+still does the job it was added for — without it the app's contents render at the wrong position first.
+
+**Accepted as a WSLg artifact.** One further idea exists and was not pursued: map the window at a
+near-zero size so its shadow is negligible, position it, then set the real size. That needs
+`MinWidth`/`MinHeight` temporarily cleared and would trade the shadow flash for a window visibly
+growing into place — plausibly worse, and squarely a workaround for one compositor. Worth re-checking
+on a real Linux desktop before spending anything more on it; a different compositor may not draw the
+shadow at all, and Windows does not.
+
+### Still to do
+
+- [ ] **Manual verification (STOP — user):** drag by the title bar; resize from all four edges and all
+      four corners; maximize and restore by both the button and a double-click; minimize; close; confirm
+      the frame looks the same on Windows and Linux.
+- [ ] Confirm the residual Linux **startup frame jump is gone** — with no server-side frame the whole
+      window is client area, which `Opacity = 0` hides. This was the main reason the slice was wanted.
+- [ ] Confirm the menu bar, keyboard shortcuts, and the viewport still behave under the new root layout.
+- [ ] If the frame jump is gone, revisit whether the pre-show hide still needs a full settle delay on
+      Windows (it costs ~150 ms there and buys nothing).

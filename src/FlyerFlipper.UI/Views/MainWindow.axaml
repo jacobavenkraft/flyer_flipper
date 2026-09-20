@@ -5,12 +5,15 @@
         xmlns:vm="using:FlyerFlipper.UI.ViewModels"
         xmlns:views="using:FlyerFlipper.UI.Views"
         xmlns:viewport="using:FlyerFlipper.Core.Viewport"
+        xmlns:controls="using:Avalonia.Controls"
         mc:Ignorable="d"
         x:Class="FlyerFlipper.UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="Flyer Flipper"
         Width="1000" Height="700"
-        MinWidth="600" MinHeight="400">
+        MinWidth="600" MinHeight="400"
+        SystemDecorations="None"
+        Background="{DynamicResource SystemChromeMediumLowColor}">
 
   <!--
     MenuItem.InputGesture only displays the shortcut; these bindings make the keys work.
@@ -21,7 +24,14 @@
     <KeyBinding Gesture="Ctrl+Shift+V" Command="{Binding ToggleViewportModeCommand}"/>
   </Window.KeyBindings>
 
+  <!--
+    Root Panel so the resize grips can overlay the content. The window draws its own chrome
+    (decision 20): SystemDecorations="None" means no OS frame, title bar, or resize border.
+  -->
+  <Panel>
   <DockPanel LastChildFill="True">
+    <views:CaptionBar DockPanel.Dock="Top"/>
+
     <Menu DockPanel.Dock="Top">
       <MenuItem Header="_File">
         <MenuItem Header="E_xit" Command="{Binding ExitCommand}"/>
@@ -85,5 +95,33 @@
       </Panel>
     </DockPanel>
   </DockPanel>
+
+    <!--
+      Resize grips, replacing the OS resize border. Only these thin cells are hit-testable — the Grid
+      and its centre cell have no background, so clicks there fall through to the content beneath.
+      Hidden while maximized, where the OS owns the size.
+    -->
+    <Grid x:Name="ResizeGrips"
+          RowDefinitions="5,*,5" ColumnDefinitions="5,*,5">
+      <Border Grid.Row="0" Grid.Column="0" Background="Transparent" Cursor="TopLeftCorner"
+              Tag="{x:Static controls:WindowEdge.NorthWest}" PointerPressed="OnResizeGripPressed"/>
+      <Border Grid.Row="0" Grid.Column="1" Background="Transparent" Cursor="TopSide"
+              Tag="{x:Static controls:WindowEdge.North}" PointerPressed="OnResizeGripPressed"/>
+      <Border Grid.Row="0" Grid.Column="2" Background="Transparent" Cursor="TopRightCorner"
+              Tag="{x:Static controls:WindowEdge.NorthEast}" PointerPressed="OnResizeGripPressed"/>
+
+      <Border Grid.Row="1" Grid.Column="0" Background="Transparent" Cursor="LeftSide"
+              Tag="{x:Static controls:WindowEdge.West}" PointerPressed="OnResizeGripPressed"/>
+      <Border Grid.Row="1" Grid.Column="2" Background="Transparent" Cursor="RightSide"
+              Tag="{x:Static controls:WindowEdge.East}" PointerPressed="OnResizeGripPressed"/>
+
+      <Border Grid.Row="2" Grid.Column="0" Background="Transparent" Cursor="BottomLeftCorner"
+              Tag="{x:Static controls:WindowEdge.SouthWest}" PointerPressed="OnResizeGripPressed"/>
+      <Border Grid.Row="2" Grid.Column="1" Background="Transparent" Cursor="BottomSide"
+              Tag="{x:Static controls:WindowEdge.South}" PointerPressed="OnResizeGripPressed"/>
+      <Border Grid.Row="2" Grid.Column="2" Background="Transparent" Cursor="BottomRightCorner"
+              Tag="{x:Static controls:WindowEdge.SouthEast}" PointerPressed="OnResizeGripPressed"/>
+    </Grid>
+  </Panel>
 
 </Window>
