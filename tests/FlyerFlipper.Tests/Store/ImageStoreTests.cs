@@ -45,13 +45,13 @@ public class ImageStoreTests
         public ImageReference this[int index] => Catalog.Images[index];
 
         /// <summary>Image references for the next folder, so gates can be set before it loads.</summary>
-        public static ImageReference[] References(int count, string folder = @"C:\flyers")
-            => Enumerable.Range(0, count).Select(i => new ImageReference($@"{folder}\image{i:D2}.png")).ToArray();
+        public static ImageReference[] References(int count, string folder = "flyers")
+            => Enumerable.Range(0, count).Select(i => new ImageReference(TestPaths.File(folder, $"image{i:D2}.png"))).ToArray();
 
         public Task LoadFolderAsync(IReadOnlyList<ImageReference> images)
         {
             _images = images;
-            return Catalog.LoadAsync(new ImageSourceQuery(@"C:\flyers"));
+            return Catalog.LoadAsync(new ImageSourceQuery(TestPaths.Folder("flyers")));
         }
 
         public Task LoadFolderAsync(int count) => LoadFolderAsync(References(count));
@@ -270,7 +270,7 @@ public class ImageStoreTests
     public void NewFolder_ResetsSlots_CancelsWork_AndDisposesPreviousImages() => SingleThreadedContext.Run(async () =>
     {
         using var f = new Fixture(maxConcurrentThumbnails: 1);
-        var first = Fixture.References(8, @"C:\first");
+        var first = Fixture.References(8, "first");
         f.Loader.Close(first[1]); // leave the first folder's thumbnail generation unfinished
         await f.LoadFolderAsync(first);
         await SingleThreadedContext.WaitUntilAsync(() => f.Loader.Started(first[1]) == 1);
@@ -280,7 +280,7 @@ public class ImageStoreTests
         var resetImagesCount = -1;
         f.Store.ImagesReset += (_, _) => resetImagesCount = f.Store.Images.Count;
 
-        var second = Fixture.References(2, @"C:\second");
+        var second = Fixture.References(2, "second");
         await f.LoadFolderAsync(second);
         f.Loader.Open(first[1]);
         await f.AllThumbnailsSettledAsync();
@@ -372,10 +372,10 @@ public class ImageStoreTests
         bool? sawCancellation = null;
         var slow = new SlowProcessor(entered, cancelled => sawCancellation = cancelled);
         using var f = new Fixture(maxConcurrentThumbnails: 1, slow);
-        await f.LoadFolderAsync(Fixture.References(1, @"C:\first"));
+        await f.LoadFolderAsync(Fixture.References(1, "first"));
         await SingleThreadedContext.WaitUntilAsync(() => entered.IsSet);
 
-        await f.LoadFolderAsync(Fixture.References(1, @"C:\second"));
+        await f.LoadFolderAsync(Fixture.References(1, "second"));
         await SingleThreadedContext.WaitUntilAsync(() => sawCancellation is not null);
 
         Assert.True(sawCancellation);
@@ -533,7 +533,7 @@ public class ImageStoreTests
 
         public ProcessedImage Process(ProcessedImage input, CancellationToken cancellationToken)
         {
-            if (input.Metadata[ImageMetadataKeys.SourcePath].StartsWith(@"C:\first", StringComparison.Ordinal))
+            if (input.Metadata[ImageMetadataKeys.SourcePath].StartsWith(TestPaths.Folder("first"), StringComparison.Ordinal))
             {
                 entered.Set();
                 finished(cancellationToken.WaitHandle.WaitOne(TimeSpan.FromSeconds(5)));

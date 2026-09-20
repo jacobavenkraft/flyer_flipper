@@ -16,6 +16,7 @@ using FlyerFlipper.UI.Processors;
 using FlyerFlipper.UI.ViewModels;
 using FlyerFlipper.UI.Views;
 using Moq;
+using FlyerFlipper.Tests.TestSupport;
 
 namespace FlyerFlipper.Tests.Headless;
 
@@ -25,7 +26,7 @@ namespace FlyerFlipper.Tests.Headless;
 /// </summary>
 internal sealed class AppHarness : IDisposable
 {
-    public const string Folder = @"C:\flyers";
+    public static readonly string Folder = TestPaths.Folder("flyers");
 
     private readonly Mock<IImageSource> _source = new();
     private IReadOnlyList<ImageReference> _images = [];

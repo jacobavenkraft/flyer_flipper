@@ -3,6 +3,7 @@ using FlyerFlipper.Core.Pipeline;
 using FlyerFlipper.Core.Processors;
 using FlyerFlipper.Core.Source;
 using FlyerFlipper.Imaging.Processors;
+using FlyerFlipper.Tests.TestSupport;
 
 namespace FlyerFlipper.Tests.Imaging;
 
@@ -21,7 +22,7 @@ public class ProcessorImplementationTests
         }
 
         var buffer = new ImageBuffer(pixels, width, height, width * 4, ImagePixelFormat.Bgra8888Premultiplied);
-        return ProcessedImage.FromSource(new SourceImage(new ImageReference(@"C:\flyers\gig.png"), buffer));
+        return ProcessedImage.FromSource(new SourceImage(new ImageReference(TestPaths.File("flyers", "gig.png")), buffer));
     }
 
     private static byte[] PixelAt(ImageBuffer buffer, int x, int y)

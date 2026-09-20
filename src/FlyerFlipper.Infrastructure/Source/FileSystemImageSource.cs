@@ -41,8 +41,20 @@ public sealed class FileSystemImageSource : IImageSource
             }
         }
 
-        results.Sort(static (a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.FullPath, b.FullPath));
+        results.Sort(static (a, b) => ComparePaths(a.FullPath, b.FullPath));
         return results;
+    }
+
+    /// <summary>
+    /// Orders paths case-insensitively so the grid reads naturally, then breaks ties ordinally.
+    /// The tiebreak matters on case-sensitive file systems (Linux), where "A.jpg" and "a.jpg" can
+    /// coexist: <see cref="List{T}.Sort(Comparison{T})"/> is unstable, so equal-comparing entries
+    /// would otherwise land in an arbitrary order that varies between runs.
+    /// </summary>
+    internal static int ComparePaths(string a, string b)
+    {
+        var byName = StringComparer.OrdinalIgnoreCase.Compare(a, b);
+        return byName != 0 ? byName : StringComparer.Ordinal.Compare(a, b);
     }
 
     private static string[] ParseWildcards(string? wildcard)

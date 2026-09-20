@@ -13,6 +13,10 @@
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.10.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
+    <!-- The SkiaSharp metapackage ships Win32 + macOS natives only; without this, every test that
+         touches the Imaging project fails on Linux with a DllNotFoundException for libSkiaSharp.
+         The app itself gets this transitively from Avalonia.Desktop. Version pinned to match. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="2.88.9" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>

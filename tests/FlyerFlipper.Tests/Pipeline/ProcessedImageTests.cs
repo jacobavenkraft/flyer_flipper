@@ -1,6 +1,7 @@
 using FlyerFlipper.Core.Imaging;
 using FlyerFlipper.Core.Pipeline;
 using FlyerFlipper.Core.Source;
+using FlyerFlipper.Tests.TestSupport;
 
 namespace FlyerFlipper.Tests.Pipeline;
 
@@ -10,19 +11,20 @@ public class ProcessedImageTests
     public void FromSource_KeepsBuffer_AndRecordsSourceMetadata()
     {
         var buffer = TestImages.Buffer(4, 3);
-        var source = new SourceImage(new ImageReference(@"C:\flyers\gig.jpg"), buffer);
+        var path = TestPaths.File("flyers", "gig.jpg");
+        var source = new SourceImage(new ImageReference(path), buffer);
 
         var image = ProcessedImage.FromSource(source);
 
         Assert.Same(buffer, image.Buffer);
-        Assert.Equal(@"C:\flyers\gig.jpg", image.Metadata[ImageMetadataKeys.SourcePath]);
+        Assert.Equal(path, image.Metadata[ImageMetadataKeys.SourcePath]);
         Assert.Equal("gig.jpg", image.Metadata[ImageMetadataKeys.SourceFileName]);
     }
 
     [Fact]
     public void WithMetadata_ReturnsCopy_LeavingOriginalUntouched()
     {
-        var original = ProcessedImage.FromSource(new SourceImage(new ImageReference(@"C:\flyers\gig.jpg"), TestImages.Buffer(4, 3)));
+        var original = ProcessedImage.FromSource(new SourceImage(new ImageReference(TestPaths.File("flyers", "gig.jpg")), TestImages.Buffer(4, 3)));
 
         var updated = original.WithMetadata("grayscale", "true");
 

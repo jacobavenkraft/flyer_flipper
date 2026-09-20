@@ -160,4 +160,23 @@ public class FileSystemImageSourceTests : IDisposable
 
         Assert.Throws<OperationCanceledException>(() => _source.Enumerate(new ImageSourceQuery(_temp.Path), cts.Token));
     }
+
+    [Fact]
+    public void ComparePaths_OrdersCaseInsensitively()
+    {
+        Assert.True(FileSystemImageSource.ComparePaths("/f/Apple.png", "/f/banana.png") < 0);
+        Assert.True(FileSystemImageSource.ComparePaths("/f/banana.png", "/f/Apple.png") > 0);
+    }
+
+    // Names differing only in case can coexist on Linux; a case-insensitive comparison alone calls
+    // them equal, and List.Sort is unstable, so the grid order would vary between runs.
+    [Fact]
+    public void ComparePaths_NamesDifferingOnlyInCase_AreOrderedDeterministically()
+    {
+        Assert.True(FileSystemImageSource.ComparePaths("/f/A.jpg", "/f/a.jpg") != 0);
+        Assert.Equal(
+            -Math.Sign(FileSystemImageSource.ComparePaths("/f/A.jpg", "/f/a.jpg")),
+            Math.Sign(FileSystemImageSource.ComparePaths("/f/a.jpg", "/f/A.jpg")));
+        Assert.Equal(0, FileSystemImageSource.ComparePaths("/f/a.jpg", "/f/a.jpg"));
+    }
 }

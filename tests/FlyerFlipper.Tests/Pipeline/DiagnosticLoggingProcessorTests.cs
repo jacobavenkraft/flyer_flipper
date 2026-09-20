@@ -3,6 +3,7 @@ using FlyerFlipper.Core.Source;
 using FlyerFlipper.Core.Imaging;
 using FlyerFlipper.Imaging.Processors;
 using Microsoft.Extensions.Logging;
+using FlyerFlipper.Tests.TestSupport;
 
 namespace FlyerFlipper.Tests.Pipeline;
 
@@ -25,7 +26,7 @@ public class DiagnosticLoggingProcessorTests
     {
         var logger = new ListLogger<DiagnosticLoggingProcessor>();
         var processor = new DiagnosticLoggingProcessor(logger);
-        var input = ProcessedImage.FromSource(new SourceImage(new ImageReference(@"C:\flyers\gig.jpg"), TestImages.Buffer(12, 8)));
+        var input = ProcessedImage.FromSource(new SourceImage(new ImageReference(TestPaths.File("flyers", "gig.jpg")), TestImages.Buffer(12, 8)));
 
         var first = processor.Process(input, CancellationToken.None);
         processor.Process(input, CancellationToken.None);

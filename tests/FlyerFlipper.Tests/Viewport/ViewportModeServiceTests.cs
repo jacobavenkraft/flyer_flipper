@@ -1,6 +1,7 @@
 using FlyerFlipper.Core.Source;
 using FlyerFlipper.Core.Viewport;
 using Moq;
+using FlyerFlipper.Tests.TestSupport;
 
 namespace FlyerFlipper.Tests.Viewport;
 
@@ -21,7 +22,7 @@ public class ViewportModeServiceTests
     }
 
     private static ImageReference[] Images(int count)
-        => Enumerable.Range(0, count).Select(i => new ImageReference($@"C:\flyers\{i}.png")).ToArray();
+        => Enumerable.Range(0, count).Select(i => new ImageReference(TestPaths.File("flyers", $"{i}.png"))).ToArray();
 
     private void ReplaceCatalog(int count)
     {

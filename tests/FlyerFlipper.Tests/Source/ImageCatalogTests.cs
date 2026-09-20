@@ -1,5 +1,6 @@
 using FlyerFlipper.Core.Source;
 using Moq;
+using FlyerFlipper.Tests.TestSupport;
 
 namespace FlyerFlipper.Tests.Source;
 
@@ -19,8 +20,8 @@ public class ImageCatalogTests
     [Fact]
     public async Task LoadAsync_ReplacesImagesAndQuery_AndRaisesImagesChanged()
     {
-        var query = new ImageSourceQuery(@"C:\flyers");
-        ImageReference[] images = [new(@"C:\flyers\a.png"), new(@"C:\flyers\b.png")];
+        var query = new ImageSourceQuery(TestPaths.Folder("flyers"));
+        ImageReference[] images = [new(TestPaths.File("flyers", "a.png")), new(TestPaths.File("flyers", "b.png"))];
         _source.Setup(s => s.Enumerate(query, It.IsAny<CancellationToken>())).Returns(images);
         var catalog = new ImageCatalog(_source.Object);
         var raised = 0;
@@ -36,9 +37,9 @@ public class ImageCatalogTests
     [Fact]
     public async Task LoadAsync_WhenSourceThrows_KeepsPreviousImages_AndDoesNotRaise()
     {
-        var good = new ImageSourceQuery(@"C:\good");
-        var bad = new ImageSourceQuery(@"C:\bad");
-        ImageReference[] images = [new(@"C:\good\a.png")];
+        var good = new ImageSourceQuery(TestPaths.Folder("good"));
+        var bad = new ImageSourceQuery(TestPaths.Folder("bad"));
+        ImageReference[] images = [new(TestPaths.File("good", "a.png"))];
         _source.Setup(s => s.Enumerate(good, It.IsAny<CancellationToken>())).Returns(images);
         _source.Setup(s => s.Enumerate(bad, It.IsAny<CancellationToken>())).Throws(new DirectoryNotFoundException());
         var catalog = new ImageCatalog(_source.Object);
@@ -57,12 +58,12 @@ public class ImageCatalogTests
     public async Task LoadAsync_CancelledDuringEnumeration_DoesNotReplaceImages()
     {
         using var cts = new CancellationTokenSource();
-        var query = new ImageSourceQuery(@"C:\flyers");
+        var query = new ImageSourceQuery(TestPaths.Folder("flyers"));
         _source.Setup(s => s.Enumerate(query, It.IsAny<CancellationToken>()))
             .Returns(() =>
             {
                 cts.Cancel();
-                return [new ImageReference(@"C:\flyers\a.png")];
+                return [new ImageReference(TestPaths.File("flyers", "a.png"))];
             });
         var catalog = new ImageCatalog(_source.Object);
         var raised = 0;
@@ -78,7 +79,7 @@ public class ImageCatalogTests
     public async Task LoadAsync_PassesCancellationTokenToSource()
     {
         using var cts = new CancellationTokenSource();
-        var query = new ImageSourceQuery(@"C:\flyers");
+        var query = new ImageSourceQuery(TestPaths.Folder("flyers"));
         _source.Setup(s => s.Enumerate(query, cts.Token)).Returns([]);
         var catalog = new ImageCatalog(_source.Object);
 

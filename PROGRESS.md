@@ -1,6 +1,6 @@
 # Flyer Flipper — Progress log
 
-Last updated: 2026-09-13
+Last updated: 2026-09-20
 
 This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up where we left off.
 
@@ -15,11 +15,14 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 **Slice 4a (hybrid image store refactor): DONE — approved** (commit `88128bc`).
 **Slice 4b (pipeline pass-through): DONE — approved** (commit `24abec8`).
 **Slice 5 (processor tabs + grayscale + resize + image scaling): DONE — approved** (commit `086a335`). Design choices: PLAN.md decision 15.
-**Slice 6 (settings persistence): code + automated verification DONE; manual verification (STOP gate) PENDING USER.** Uncommitted. Design choices: PLAN.md decision 16.
+**Slice 6 (settings persistence): DONE — approved** (commit `69d1396`). Design choices: PLAN.md decision 16.
+**Slice 7 (polish + Linux verification): IN PROGRESS** (started 2026-09-18; resumed 2026-09-20). Linux environment: **WSL2** (user's choice), Ubuntu 26.04.1. Automated verification is **green on both platforms** — 275/275 tests on Windows and Linux, clean AOT publish for `win-x64` and `linux-x64`. The user's first Linux smoke test found two real defects (theme, window placement); both are **fixed and verified**, and it is back with the user for re-verification and MVP acceptance.
 
 Design decided before Slice 4 (PLAN.md decision 14): hybrid store — thumbnails for all images, full-size sliding window (current ± 1) loaded only in single view, no byte budget. Original Slice 4 split into 4a (store, no behavior change) and 4b (pipeline pass-through inside the store).
 
-Do not begin Slice 7 until the user explicitly approves Slice 6.
+Slice 6 was approved by the user on 2026-09-18; Slice 7 is under way.
+
+**Slice 7 has NOT been approved and NOT been committed.** The MVP acceptance STOP gate is still ahead.
 
 ---
 
@@ -488,19 +491,394 @@ dotnet run --project src/FlyerFlipper.App
 
 ---
 
-## What's next — Slice 7 preview (do not start until Slice 6 approved)
+## Slice 7 — in progress (started 2026-09-18)
 
-From `PLAN.md § Slice 7` — Polish + Linux verification:
-- Cross-platform verification on Linux (WSL2 or VM — **user to confirm which**).
-- Final AOT publish on `win-x64` and `linux-x64` (Linux AOT publish needs a Linux build environment/toolchain — confirm).
-- Full test suite green on Windows (and on Linux if run there); headless tests may need `SkiaSharp.NativeAssets.Linux` in the test project.
-- MVP acceptance: user exercises the whole flow end-to-end.
+Scope per `PLAN.md § Slice 7`: polish + Linux verification + MVP acceptance.
+
+### ⚠ Uncommitted work in the tree (as of 2026-09-18)
+
+`HEAD` is `69d1396` (Slice 6). The Slice 7 work below is **written to disk but not committed** — a
+reboot keeps it, but a fresh session must not assume a clean tree. `git status` should show exactly:
+
+```
+ M PLAN.md
+ M PROGRESS.md
+ M src/FlyerFlipper.App/App.axaml.cs
+ M src/FlyerFlipper.Core/Settings/WindowPlacement.cs
+ M src/FlyerFlipper.Infrastructure/FlyerFlipper.Infrastructure.csproj
+ M src/FlyerFlipper.Infrastructure/Source/FileSystemImageSource.cs
+ M src/FlyerFlipper.UI/Settings/WindowPlacementTracker.cs
+ M tests/FlyerFlipper.Tests/FlyerFlipper.Tests.csproj
+ M tests/FlyerFlipper.Tests/Headless/AppHarness.cs
+ M tests/FlyerFlipper.Tests/Headless/SettingsPersistenceUiTests.cs
+ M tests/FlyerFlipper.Tests/Imaging/ProcessorImplementationTests.cs
+ M tests/FlyerFlipper.Tests/Pipeline/DiagnosticLoggingProcessorTests.cs
+ M tests/FlyerFlipper.Tests/Pipeline/ImageProcessingPipelineTests.cs
+ M tests/FlyerFlipper.Tests/Pipeline/ProcessedImageTests.cs
+ M tests/FlyerFlipper.Tests/Settings/WindowPlacementRulesTests.cs
+ M tests/FlyerFlipper.Tests/Source/FileSystemImageSourceTests.cs
+ M tests/FlyerFlipper.Tests/Source/ImageCatalogTests.cs
+ M tests/FlyerFlipper.Tests/Store/ImageStoreTests.cs
+ M tests/FlyerFlipper.Tests/Viewport/ViewportModeServiceTests.cs
+?? src/FlyerFlipper.UI/Theming/
+?? tests/FlyerFlipper.Tests/TestSupport/TestPaths.cs
+?? tests/FlyerFlipper.Tests/Theming/
+```
+
+(`PLAN.md` = decisions 17–19 + Slice 7 text; `PROGRESS.md` = this section. The two `Infrastructure`
+files, `FlyerFlipper.Tests.csproj` and `FileSystemImageSourceTests.cs` are the 2026-09-18 fixes. The
+test-fixture files plus untracked `TestSupport/TestPaths.cs` are the 2026-09-20 path fix. `App.axaml.cs`
+plus untracked `UI/Theming/` and `tests/.../Theming/` are the theme fix (decision 18).
+`Core/Settings/WindowPlacement.cs`, `UI/Settings/WindowPlacementTracker.cs` and
+`Settings/WindowPlacementRulesTests.cs` are the window-placement fix (decision 19).)
+
+> Check this list with **Windows** `git status`, not with git inside WSL. The repo lives on `/mnt/d`
+> and is checked out CRLF, but WSL's git has its own `core.autocrlf` setting, so from the distro it
+> also reports `.gitignore`, `LICENSE`, `README.md` and `flyer_flipper.sln` as modified. They are not.
+
+### Linux environment
+
+User chose **WSL2**. **Confirmed up and running on 2026-09-20**: default distro `Ubuntu` (26.04.1
+LTS), WSL version 2, kernel 6.18.33.2-microsoft-standard-WSL2, state `Running`. WSLg is present
+(`DISPLAY=:0`, `WAYLAND_DISPLAY=wayland-0`) — so the smoke test can drive a real window, and note the
+**Wayland** path is the live one, which is exactly the window-placement risk flagged below.
+
+The table below records the box's *pre-install* state on 2026-09-18, kept for history:
+
+| Component | State on 2026-09-18 |
+|---|---|
+| WSL (`wsl --status`) | Not installed (only the inbox `wsl.exe` stub) |
+| `Microsoft-Windows-Subsystem-Linux` feature | Present, **disabled** |
+| `VirtualMachinePlatform` feature | Present, **disabled** |
+| `Microsoft-Hyper-V-All` | **Enabled** |
+| Docker / Podman / VirtualBox / VMware | None installed |
+
+**The user began installing WSL2 on 2026-09-18** (`wsl --install` from an elevated prompt, then a
+reboot) and the session ended there. **First thing on resume: check whether it finished.**
+
+```powershell
+wsl --status        # "not installed" means the install didn't take
+wsl --list --verbose
+```
+
+The repo is reachable from the distro at `/mnt/d/001_source/flyer_flipper` — no clone needed.
+
+**Native AOT cannot cross-compile:** `dotnet publish -r linux-x64` with `PublishAot=true` invokes the
+platform linker, so the `linux-x64` publish and the Linux smoke test must both run *inside* WSL, not
+from Windows.
+
+#### Distro setup — status as of 2026-09-20
+
+**DONE (no sudo needed).** .NET SDK **10.0.401** installed to `/home/jacob/.dotnet` via
+`dotnet-install.sh --channel 10.0 --install-dir $HOME/.dotnet`. Microsoft's apt feed was skipped
+deliberately — it has no Ubuntu 26.04 entry. `dotnet --list-sdks` succeeds. `global.json` pins
+10.0.100 with `latestFeature`, which accepts the 10.0.4xx feature band, so `global.json` needs no
+change.
+
+`~/.dotnet` is **not** on the distro's default `PATH`, so every WSL build command needs a prefix:
+
+```bash
+export DOTNET_ROOT=$HOME/.dotnet; export PATH=$HOME/.dotnet:$PATH
+```
+
+**DONE (2026-09-20, run by the user).** `sudo` in this distro requires an interactive password, which a
+non-interactive tool call cannot supply, so the user ran this themselves. Keep it that way — never try
+to `sudo` from a tool call; it just fails. The command was:
+
+```bash
+sudo apt update
+sudo apt install -y libicu78 clang zlib1g-dev libice6 libsm6
+```
+
+| Package | Why | State before the install |
+|---|---|---|
+| `libicu78` | **.NET itself will not start without ICU.** `dotnet build` dies with `Couldn't find a valid ICU package installed on the system` before any project work begins. Ubuntu 26.04's ICU soname is 78 — `libicu74`/`libicu76` do not exist here. | was missing — **hard blocker** |
+| `clang`, `zlib1g-dev` | Native AOT link step. Only `/usr/bin/ld` is present; there is no `gcc` and no `cc`. | was missing |
+| `libice6`, `libsm6` | Skia / Avalonia at runtime. | was missing |
+| `libfontconfig1` | Skia font enumeration. | **already installed** |
+| `libssl3` | TLS. | **already installed** (`libssl.so.3`) |
+
+Do **not** work around the ICU blocker with `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`. It would let
+the build run, but invariant globalization changes string casing and comparison — including the
+case-insensitive wildcard and path-sort logic in `FileSystemImageSource` that this Linux pass exists
+to verify. A green run under invariant mode would not be evidence of anything.
+
+**Build artifacts.** Linux builds use `--artifacts-path /tmp/ff-linux` so the Linux `obj/bin` never
+clobbers the Windows ones in the shared tree (the repo lives on `/mnt/d`, visible to both). Keep
+using that flag; without it the two platforms invalidate each other's restore on every switch.
+
+### Done so far (Windows side)
+
+- Full suite green on Windows: **252/252** (`dotnet test -c Release`), 0 build warnings.
+- `win-x64` Native AOT publish clean, exit code 0, no warnings. (Remember the `vswhere.exe` PATH
+  workaround under "Environment quirk" above.)
+- **Cross-platform fix — Linux Skia natives in tests.** The `SkiaSharp` metapackage ships Win32 and
+  macOS natives only; `FlyerFlipper.Tests` had no Linux native asset, so every test touching the
+  Imaging project would have failed on Linux with `DllNotFoundException` for `libSkiaSharp`. Added
+  `SkiaSharp.NativeAssets.Linux` 2.88.9 to the test project (the app already gets it transitively via
+  `Avalonia.Desktop`). Verified `runtimes/linux-x64/native/` now lands in the test output.
+- **Cross-platform fix — nondeterministic enumeration order.** `FileSystemImageSource` sorted with
+  `StringComparer.OrdinalIgnoreCase` alone. On a case-sensitive file system `A.jpg` and `a.jpg` can
+  coexist and compare equal, and `List.Sort` is unstable, so their grid order would vary between
+  runs. Extracted `FileSystemImageSource.ComparePaths` (case-insensitive, ordinal tiebreak) with
+  `InternalsVisibleTo` on Infrastructure; 2 new tests.
+
+### Audited and confirmed fine for Linux
+
+- `JsonSettingsStore.DefaultFilePath` — `SpecialFolder.ApplicationData` resolves to `$XDG_CONFIG_HOME`
+  or `~/.config` on Linux, matching the documented behaviour. Atomic save uses `File.Move(overwrite)`.
+- `FileSystemImageSource` wildcard matching is explicitly case-insensitive
+  (`MatchCasing.CaseInsensitive` + `MatchesSimpleExpression(ignoreCase: true)`), so `*.jpg` still
+  matches `PHOTO.JPG` on Linux. `AttributesToSkip = Hidden | System` also skips dot-files there,
+  since .NET maps them to `FileAttributes.Hidden` on Unix.
+- No hard-coded drive letters or `\` separators anywhere in `src/`. The three Windows-looking path
+  literals in tests are inert strings, not file-system operations.
+- `OutputType=WinExe` is correct for a cross-platform Avalonia app (treated as `Exe` off Windows).
+
+### Session 2026-09-20 — what was done
+
+- Confirmed the tree still matched the uncommitted list above; `HEAD` still `69d1396`.
+- Re-established the Windows baseline: `dotnet test -c Release` → **252/252 passed, 0 failed**.
+- Confirmed WSL2 installed and running (Ubuntu 26.04.1, WSLg present).
+- Installed .NET SDK 10.0.401 into `~/.dotnet` in the distro (no sudo required).
+- User ran the `sudo apt install`; all 5 packages confirmed installed (clang 21.1.8).
+- **First real Linux test run: 10 failures / 252.** All ten traced to **one** root cause — below.
+- Fixed it; **Linux now 252/252**, and Windows re-verified **252/252** with the same changes.
+- **`linux-x64` Native AOT publish: clean, zero warnings.** Produces a 20 MB stripped ELF PIE
+  executable alongside `libSkiaSharp.so` and `libHarfBuzzSharp.so`.
+- **Launch check:** the published binary ran 20 s under WSLg with empty stderr and had to be killed
+  by `timeout` (exit 124) — i.e. it started and stayed up rather than crashing. This is a *liveness*
+  check only; it is **not** the smoke test, which is still the user's to do.
+
+#### Linux failure (fixed) — Windows path literals in test fixtures
+
+10 tests failed on Linux: 5 in `ProcessorImplementationTests`, 3 in `Pipeline`, 1 in
+`DiagnosticLoggingProcessorTests`, and `ImageStoreTests.ProcessorFailure_MarksSlotsFailed`.
+
+Root cause, shared by all ten: fixtures hard-coded Windows literals such as `@"C:\flyers\gig.png"`
+and handed them to `ImageReference`. `ImageReference.FileName` is `Path.GetFileName`, which on Linux
+correctly treats a backslash as an ordinary file-name character — so `FileName` returned the whole
+string `C:\flyers\gig.png` rather than `gig.png`, and the `SourceFileName` metadata built from it
+followed. Most of the failures were a blunt string mismatch. The `ImageStoreTests` one was sneakier:
+its failure-injection processor keys on `Metadata[SourceFileName] == "image01.png"`, which never
+matched, so the processor never threw, the slot never reached `Failed`, and the test died on a 5 s
+timeout.
+
+**This was a test-fixture bug, not a product bug.** The 2026-09-18 audit note claiming "the three
+Windows-looking path literals in tests are inert strings, not file-system operations" was **wrong** —
+they are not inert, because `FileName` derives from them. `ImageReference` itself was left alone
+deliberately: teaching it to split on a backslash under Linux would be incorrect, since a backslash
+is a legal character in a Linux file name.
+
+Fix: new `tests/FlyerFlipper.Tests/TestSupport/TestPaths.cs` — `TestPaths.Folder("flyers")` and
+`TestPaths.File("flyers", "gig.png")`, rooted at `C:\` on Windows and `/` elsewhere via
+`Path.Combine`. Converted every fixture literal that feeds `ImageReference`, `ImageSourceQuery`, or
+path metadata, across 8 test files.
+
+Deliberately **not** converted: the literals in `ImageSourceViewModelTests`. Those tests are about
+trimming whitespace and stripping quotes from a path the *user typed* (Explorer "Copy as path"), so a
+Windows-shaped string is the realistic input and it never reaches a path API. They pass on both
+platforms as they are.
+
+#### Linux smoke test round 1 (user, 2026-09-20) — two defects, both fixed
+
+The user ran the published `linux-x64` binary: the app runs and functions, and window **sizing**
+restores correctly. Two things were wrong.
+
+**Defect A — the theme was light on Linux, dark on Windows.** `App.axaml` asks for
+`RequestedThemeVariant="Default"`, i.e. "follow the OS". Windows answers; Linux answers through the
+XDG desktop portal, and WSLg has **no portal at all** — verified directly:
+
+```
+$ dbus-send --session --dest=org.freedesktop.portal.Desktop ... Settings.Read color-scheme
+Error org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.portal.Desktop
+was not provided by any .service files
+```
+
+Avalonia then falls back to *light*. Fixed per decision 18: new `FlyerFlipper.UI/Theming/StartupTheme.cs`
+forces Dark only when nothing can be asked, detected by looking for the portal's D-Bus service file in
+the XDG data directories (no D-Bus call, so startup stays synchronous and AOT-friendly). Note a session
+bus **does** exist under WSLg, so `DBUS_SESSION_BUS_ADDRESS` is useless as a discriminator — the
+service file is the signal that works.
+
+**Defect B — window placement never restored.** This took real digging; throwaway Avalonia probes
+under `/tmp/ffprobe` (outside the repo) established the facts, none of which reproduce on Windows:
+
+| Probe finding | Windows | WSLg / XWayland |
+|---|---|---|
+| Position set *before* the window is mapped | honoured | **silently discarded** — accepted, then the WM places the window where it likes |
+| `Window.Position` read back after setting it | exact, `delta=(0,0)` | **32 px short on both axes**, every time |
+| Position set *after* the window is on screen | honoured | honoured |
+| User drags raise `PositionChanged` | yes | yes (confirmed by the user driving a probe) |
+
+Those two combined into the observed symptom. The pre-show position was dropped, so the window sat at
+the WM's default spot, reported through the −32 offset as `-22,-22`. That got saved; on the next launch
+`IsReachable` did this:
+
+```
+overlapX = min(-22+1062, 3840) - max(-22, 0) = 1040  >= 120  ✓
+overlapY = min(-22+  24, 2160) - max(-22, 0) =    2  >=  24  ✗
+```
+
+— only 2 px of title bar on screen — so the placement was discarded and the window centred, which WSLg
+again turned into its default spot, which re-saved `-22,-22`. Self-reinforcing, and `-22,-22` never
+changed across runs. Had the reachability test not caught it, the read-back offset alone would have
+walked the window −32,−32 per launch.
+
+Fixed per decision 19, in `WindowPlacementTracker.CompleteRestore`: after the window opens, re-apply the
+saved position and then re-ask until the window reports the target back (max 5 attempts, 400 ms apart),
+with `_restoreTarget` pinning the tracked position so the half-settled values are never saved back.
+`WindowPlacementRules.OriginCorrection` computes each next assignment.
+
+**One trap worth recording:** the correction must measure the offset against *what was last assigned*,
+not against the target. Measuring against the target oscillates — observed live, with target `56,132`:
+
+```
+tick 0  reported=-22,-22  -> assign 134,286
+tick 1  reported=102,254  -> assign  10, 10
+tick 2  reported=-22,-22  -> assign 134,286   (repeats until attempts run out)
+```
+
+`OriginCorrection` therefore takes both the target and the last assignment, and
+`OriginCorrection_DrivenAsTheTrackerDoes_ConvergesOnTheTarget` pins the loop's convergence, `56,132`
+included.
+
+`IsReachable` was deliberately **not** changed. With the drift fixed it only fires for the case it was
+written for — a saved position on a monitor that is no longer attached.
+
+**Verified after the fix** (AOT binary, unattended, two launches per seed):
+
+| Seed | Run 1 saved | Run 2 saved |
+|---|---|---|
+| `56,132` (the value that used to oscillate) | `56,132` | `56,132` |
+| `500,300` | `500,300` | `500,300` |
+| `1200,640` | `1200,640` | `1200,640` |
+
+Exact round trip, no drift. A trace also confirmed the intended shape on every launch:
+`reported=-22,-22 → assign target → reported=target−32 → assign target+32 → reported=target → done`,
+i.e. two corrections and stop. On Windows the first tick already reports the target, so the loop makes
+no assignments at all.
+
+Suite: **275/275** on Windows and Linux (23 new tests since the fixture fix).
+
+#### Startup position jump — fixed (user report, round 2)
+
+With placement restored, the window was visible at the window manager's default spot for a moment
+before jumping to the saved position — unavoidable given that WSLg only accepts the position *after*
+the window is mapped. `WindowPlacementTracker` now sets `Opacity = 0` before the window is shown and
+restores it from every exit of the restore, so the jump happens while invisible.
+
+Probe measurements drove the timing: WSLg reveals its own position about **140 ms** after `Opened`
+(not the 400 ms first guessed), so `RestoreSettleDelay` dropped to **150 ms**. The window is hidden
+~450 ms on Linux (settle + two assignments) and ~150 ms on Windows, where the first check already
+matches and no assignment is made.
+
+**Testability note.** `DispatcherTimer` does not tick under `Avalonia.Headless` — neither
+`Dispatcher.UIThread.RunJobs()` nor `AvaloniaHeadlessPlatform.ForceRenderTimerTick()` drives it — so a
+hidden window with a timer-driven reveal was untestable, and "app never becomes visible" is too bad a
+failure to leave uncovered. The tracker now takes an injectable `Action<TimeSpan, Action>` scheduler
+(public parameterless constructor still uses `DispatcherTimer`, so DI is unchanged). Tests run the
+steps immediately, including `Tracker_RevealsTheWindowEvenWhenThePositionNeverSticks`, which drives a
+window manager that refuses every position and asserts the window is still revealed.
+
+#### `<ApplicationManifest>` — resolved, no change needed
+
+`src/FlyerFlipper.App/FlyerFlipper.App.csproj` sets
+`<ApplicationManifest>app.manifest</ApplicationManifest>` unconditionally. The open question was
+whether that needs a Windows-only condition. It does **not**: the `linux-x64` Native AOT publish
+completed with zero warnings and a working binary — the SDK ignores the manifest for non-Windows
+targets. Leaving it unconditioned.
+
+### Still to do
+
+- [x] WSL2 installed; .NET 10 SDK installed in the distro; apt dependencies installed.
+- [x] `dotnet test -c Release --artifacts-path /tmp/ff-linux` inside WSL — **252/252**.
+- [x] Windows suite still green with the fixture fix — **252/252**.
+- [x] `dotnet publish -r linux-x64 -c Release --self-contained` (AOT) inside WSL — clean, no warnings.
+- [x] `<ApplicationManifest>` question resolved — no condition needed.
+- [x] Linux smoke test, first pass (user, 2026-09-20): app runs and functions; window **sizing**
+      restores correctly. Found two defects — window **placement** never restored, and the theme was
+      light on Linux while dark on Windows. Both fixed below.
+- [x] Window placement on Linux — fixed and verified (decision 19).
+- [x] Theme — fixed per the user's choice (decision 18).
+- [x] Startup position jump — fixed (user report, 2026-09-20): the window was briefly visible at the
+      window manager's default spot before being moved to the restored position. The window is now
+      held transparent until the restore converges. Measured: WSLg settles ~140 ms after `Opened`, so
+      the settle delay dropped 400 ms → 150 ms; hidden for ~450 ms on Linux, ~150 ms on Windows.
+- [x] **Linux smoke test, second pass (user, 2026-09-20):** dark theme confirmed, position restores.
+      **Residual, accepted:** the window *frame* still visibly jumps at startup, though the contents
+      do not. `Opacity = 0` hides the client area, which Avalonia renders; under WSLg the frame is
+      drawn **server-side by the compositor**, so it is not ours to hide. Ruled out: positioning
+      off-screen before showing (the window manager discards any pre-map position — the same reason
+      the restore has to run post-map), and mapping minimized then restoring (trades the jump for
+      taskbar flicker and a restore animation). Expected to disappear in **Slice 8**: with
+      `SystemDecorations="None"` there is no server-side frame, so the whole window is client area
+      and `Opacity = 0` hides all of it. Re-check this after Slice 8.
+- [x] **Windows re-check (user, 2026-09-20):** placement and theme both good. Binary: `/tmp/ff-linux/publish/FlyerFlipper.App/release_linux-x64/FlyerFlipper.App`
+      (`/tmp` does not survive a WSL shutdown — re-publish if it has gone).
+- [ ] Known cost, accepted for now: the pre-show hide buys nothing on Windows, which honours the
+      pre-show position anyway, yet still costs one settle delay (~150 ms) of blank before the window
+      appears. It is kept because pre-hiding is the only thing that hides the *content* jump on
+      Linux — hiding after the window is already mapped would have flashed regardless. Worth
+      revisiting after Slice 8: if custom chrome removes the frame jump, the hide may be shortened
+      or dropped.
+- [x] **Display scaling — verified by the user on Windows (2026-09-20)** at 100% and 150%, in both
+      directions, including a fresh launch after each change:
+      - **Position restores correctly** across a scale change. Expected: `WindowPlacement.X`/`Y` are
+        stored in *screen pixels*, which do not move when the scale changes.
+      - **Physical window size changes with the scale — correct, not a bug.** `Width`/`Height` are
+        stored in *device-independent* pixels, so 1062×789 logical is 1062×789 physical at 100% and
+        1593×1183 at 150%, and the content scales with it. Preserving *physical* size instead would
+        leave a 150% window only ~708 logical pixels wide while its menu bar, folder input and
+        processor tabs are laid out for 1062 — controls would clip. The mixed units in
+        `WindowPlacement` are deliberate and right.
+      - **View → Image Scaling → Actual Size** looks correct at both 100% and 150%.
+      - Not drift-prone: earlier runs held `1062×789` byte-identical across a dozen launches.
+      - Gap found and deferred, not a regression: nothing clamps a restored window *down* to the
+        screen it lands on. See PLAN.md Future enhancements. Unreachable on this hardware.
+      - Linux scaling not exercised. `AVALONIA_GLOBAL_SCALE_FACTOR=1.5 ./FlyerFlipper.App` forces it
+        (verified to drive `RenderScaling`, `DesktopScaling` and `Screen.Scaling`);
+        `AVALONIA_SCREEN_SCALE_FACTORS` and `GDK_SCALE` have no effect in Avalonia 11.3.22.
+- [ ] MVP acceptance (STOP gate): user exercises the whole flow end-to-end on Windows and Linux.
 
 ---
 
 ## How to resume a fresh session
 
+**Session ended 2026-09-20 at the Slice 7 manual-verification STOP gate.** Every automated check
+in Slice 7 is green on both platforms; what is left is the user's hands-on smoke test and their
+formal MVP acceptance. Do not start new work until they report back.
+
 1. Read this file, then `PLAN.md`.
 2. Read the memory index at `C:\Users\jacob\.claude\projects\D--001-source\memory\MEMORY.md`.
-3. Check whether the user has approved Slice 6. If not, ask.
-4. Slice 7 begins only after that approval.
+   The per-slice manual verification gate (`feedback_per_slice_manual_verification.md`) governs how
+   Slice 7 ends: hand off, then STOP for the user's MVP acceptance.
+3. Slices 1–6 are approved and committed (`HEAD` = `69d1396`). **Slice 7 is in progress with
+   uncommitted changes in the tree** — see the "⚠ Uncommitted work" block above and confirm
+   `git status` matches before doing anything else.
+4. Re-establish the baseline on Windows: `dotnet test -c Release` should report **252/252**.
+5. The Linux toolchain is fully set up. To confirm it survived a WSL restart:
+
+   ```bash
+   wsl -e bash -lc 'dpkg -s libicu78 clang zlib1g-dev libice6 libsm6 2>&1 | grep -c "^Status: install ok"'
+   ```
+
+   Expect `5`. If it is lower, ask the user to re-run the apt line — never try to `sudo` from a tool
+   call, as this distro's `sudo` demands an interactive password and the call simply fails.
+   - Every WSL dotnet call needs the `PATH` prefix:
+     `export DOTNET_ROOT=$HOME/.dotnet; export PATH=$HOME/.dotnet:$PATH`
+   - Every WSL build needs `--artifacts-path /tmp/ff-linux`, so Linux output does not clobber the
+     Windows `obj/bin` in the shared `/mnt/d` tree.
+6. The only open Slice 7 items are manual and belong to the user. If they have not yet reported
+   smoke-test results, ask — do not start Slice 8 or any new work.
+7. Nothing in Slice 7 has been committed. Do not commit without the user asking.
+
+### Open question for the user, carried over
+
+1. **The Slice 7 STOP gate:** the user's re-verification and formal MVP acceptance. Nothing else in
+   Slice 7 is outstanding.
+2. **Slice 8 (custom window chrome, decision 20) is agreed but deliberately not started** — the user
+   asked on 2026-09-20 to hold it until the Slice 7 changes are approved. Do not begin it before
+   that approval.
+3. Carried over, non-blocking: whether to commit the Slice 7 fixes now or as a single commit after
+   acceptance. Still uncommitted as of 2026-09-20.

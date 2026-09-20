@@ -38,6 +38,71 @@ public class SettingsPersistenceUiTests
     }
 
     [AvaloniaFact]
+    public void Tracker_HidesTheWindowWhileRestoringPosition()
+    {
+        // A window manager that ignores the pre-show position shows the window in the wrong place first; hiding it
+        // until the position has been re-applied is what keeps that from being a visible jump.
+        using var app = new AppHarness();
+        var window = new MainWindow(app.MainViewModel);
+
+        new WindowPlacementTracker().Attach(window, new WindowPlacement(120, 90, 1100, 750, IsMaximized: false));
+
+        Assert.Equal(0d, window.Opacity);
+    }
+
+    [AvaloniaFact]
+    public void Tracker_NothingToRestore_LeavesTheWindowVisible()
+    {
+        using var app = new AppHarness();
+        var window = new MainWindow(app.MainViewModel);
+
+        new WindowPlacementTracker().Attach(window, null);
+
+        Assert.Equal(1d, window.Opacity);
+    }
+
+    /// <summary>Runs scheduled restore steps immediately, so the restore completes without a real clock.</summary>
+    private static readonly Action<TimeSpan, Action> RunImmediately = static (_, action) => action();
+
+    [AvaloniaFact]
+    public void Tracker_AlwaysRevealsTheWindowAfterRestoring()
+    {
+        // The window is hidden to restore it, so failing to reveal it would leave the app invisible.
+        using var app = new AppHarness();
+        var window = new MainWindow(app.MainViewModel);
+        var tracker = new WindowPlacementTracker(RunImmediately);
+
+        tracker.Attach(window, new WindowPlacement(120, 90, 1100, 750, IsMaximized: false));
+        Assert.Equal(0d, window.Opacity);
+
+        window.Show();
+
+        Assert.Equal(1d, window.Opacity);
+        Assert.Equal(new PixelPoint(120, 90), window.Position);
+        Assert.Equal(new WindowPlacement(120, 90, 1100, 750, false), tracker.Current);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Tracker_RevealsTheWindowEvenWhenThePositionNeverSticks()
+    {
+        // A window manager that refuses to honour the position must not leave the window hidden forever.
+        using var app = new AppHarness();
+        var window = new MainWindow(app.MainViewModel);
+        var stubborn = new WindowPlacementTracker((_, action) =>
+        {
+            window.Position = new PixelPoint(7, 9); // whatever we ask for, the window sits here
+            action();
+        });
+
+        stubborn.Attach(window, new WindowPlacement(120, 90, 1100, 750, IsMaximized: false));
+        window.Show();
+
+        Assert.Equal(1d, window.Opacity);
+        window.Close();
+    }
+
+    [AvaloniaFact]
     public void Tracker_PlacementOffEveryScreen_IsCenteredInstead()
     {
         using var app = new AppHarness();

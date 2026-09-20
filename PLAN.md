@@ -28,6 +28,10 @@ The pre-existing repo `D:\001_source\AvaloniaControls` establishes the user's ba
 | 14 | **Image data flow (decided before Slice 4).** A **hybrid image store**: one Core service loads (and, from Slice 4b, processes) images for both views. It retains **thumbnails for every image** and **full-size images only for a sliding window of the current image ± 1**, and that window is loaded **only in single-view mode**. Memory is bounded by design (N thumbnails + 3 full-size images) — no byte budget or LRU. Opening an image outside the window re-decodes it. Alternatives considered: separate per-view load paths (initially chosen, then replaced by this), and a byte-budget LRU store (deferred — see Future enhancements). Original Slice 4 split into **4a** (store refactor, no behavior change) and **4b** (pipeline pass-through inside the store). |
 | 15 | **Slice 5 design (decided before Slice 5).** (a) The folder input stays **above** the processor tab strip. (b) Processor setting changes apply **on commit** — checkboxes instantly; number fields on Enter, leaving the field, or spinner arrows. (c) `IProcessorControlProvider` lives in **`FlyerFlipper.UI`** and returns a typed Avalonia `Control` (resolves the plan's conflict between "returns an Avalonia control" and "Core stays Avalonia-free"); processor *settings* are plain Core types shared by the processor (Imaging) and its tab (UI). (d) A **viewport display scaling mode** — fit to window, fit without enlarging, stretch to fill, actual size — selected under **View → Image Scaling**; display only, pixels unchanged; applies to single view (thumbnails always fit their cells). (e) The **Resize processor** fits images inside its max width × height, keeping aspect ratio and **never enlarging**. (f) Decoded originals are **not** kept for the full-size window yet: setting changes re-decode (cheap for ~1080 px flyers); see Future enhancements. |
 | 16 | **Slice 6 settings design (decided before Slice 6).** (a) **Processor settings are persisted generically:** `ISettingsStore`/`AppSettings` know nothing about specific processors. Each configurable processor exposes a stable settings id, returns its current settings as a JSON snippet, and accepts a JSON snippet to restore; the settings file stores those snippets keyed by id and hands them back to the matching processors on load (entries for processors not currently registered are preserved). (b) Also persisted: **window size, position, and maximized state** (restored only if the window would be reachable on a current screen; otherwise centered), and the **image scaling mode**. (c) Saves happen **shortly after each change** (debounced) plus a final flush on exit. (d) The viewed image is stored by **file name**; if that file is gone, the first image is selected. (e) If the last folder no longer exists, its path is shown with the usual "folder not found" error and an empty grid; the saved folder is kept. (f) An unreadable or corrupt settings file → start with defaults and rename it to `settings.json.bad`. (g) The active processor tab is stored by **tab name**, not position. |
+| 17 | **Slice 7 Linux environment (decided 2026-09-18).** Cross-platform verification runs in **WSL2**, not a VM. The box had no Linux environment of any kind at that point (WSL not installed; the WSL and VirtualMachinePlatform optional features present but disabled; Hyper-V enabled; no Docker/VirtualBox/VMware), so the user installed WSL2 fresh. Consequence for the plan: because Native AOT invokes the platform linker and **cannot cross-compile**, the `linux-x64` AOT publish and the Linux smoke test both run *inside* WSL — Windows can only produce the `win-x64` artifact. A Hyper-V VM stays the fallback if WSL2 proves unworkable (e.g. Wayland/WSLg interfering with window-placement restore). |
+| 18 | **Theme (decided 2026-09-20).** Follow the OS where it reports a light/dark preference; fall back to **Dark** where it does not. `App.axaml` keeps `RequestedThemeVariant="Default"`, and `StartupTheme` overrides it to Dark only when nothing can be asked. Windows and macOS always answer; on Linux the answer comes from the XDG desktop portal, and where no portal is installed — as under WSLg — Avalonia would silently fall back to *light*, which is why the app was dark on Windows and light on Linux. Portal presence is detected by looking for its D-Bus service file in the XDG data directories, so startup stays synchronous and AOT-friendly. Rejected: forcing Dark everywhere (ignores the Windows OS setting) and a persisted View-menu toggle (real scope beyond MVP; recorded under Future enhancements). |
+| 19 | **Window placement restore across window managers (decided 2026-09-20).** Restoring the saved position is completed *after* the window is mapped, not only before it is shown, and the tracker re-asks until the window reports the target back (max 5 attempts, 400 ms apart). Forced by two X11/WSLg behaviours that Windows does not exhibit: a position set before the window is mapped is silently discarded, and `Window.Position` is then reported in a different origin than the setter uses (32 px short on both axes). Left alone deliberately: `IsReachable` still centres a genuinely off-screen window, since with the drift fixed that path only triggers for its intended case (a disconnected monitor). |
+| 20 | **Custom window chrome (decided 2026-09-20; Slice 8, not yet started).** The app draws its **own** title bar with `SystemDecorations="None"`: icon, window title, and minimize / maximize-restore / close buttons, themed with the rest of the app so Windows and Linux look identical. Prompted by the Linux smoke test — WSLg's compositor draws server-side decorations from its own theme, so the frame stayed light while the app was dark. The **menu bar keeps its own row** below the title bar; merging the menu into the title bar was offered and **not** chosen. Consequence: the app takes over what the OS provided free — drag-to-move, edge and corner resize, double-click-to-maximize, and snap — via `BeginMoveDrag` / `BeginResizeDrag`. Rejected: `ExtendClientAreaToDecorationsHint` (less work, but the caption buttons still look native to each platform, so it would not deliver the identical look asked for). |
 
 ---
 
@@ -164,11 +168,33 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - **Manual verification (STOP — wait for user):** User closes and relaunches the app, verifies state is restored. Explicit approval before Slice 7.
 
 ### Slice 7 — Polish + Linux verification
-- Cross-platform verification on Linux (WSL2 or VM — user to confirm).
+- Cross-platform verification on Linux — **WSL2** (decision 17).
 - Final AOT publish check on `win-x64` and `linux-x64`.
 - Unit test pass across `FlyerFlipper.Core` and `FlyerFlipper.Imaging`.
 - **Automated verification:** Full test suite green on Windows; both `win-x64` and `linux-x64` AOT publish clean.
 - **Manual verification (STOP — MVP acceptance):** User runs on Windows and (optionally) Linux, exercises the whole MVP flow end-to-end, formally accepts MVP.
+
+### Slice 8 — Custom window chrome (planned, not started)
+
+Per decision 20. **Blocked**: the user asked to hold this until the Slice 7 changes are approved.
+
+- `SystemDecorations="None"` on `MainWindow`; custom title bar row above the existing menu bar.
+- Title bar: app icon, `Title`, and minimize / maximize-restore / close buttons, themed from the app's
+  own resources so both platforms match.
+- Re-implement what the OS decorations provided: `BeginMoveDrag` on the title bar, `BeginResizeDrag`
+  from eight edge/corner regions, double-click title bar to toggle maximize, and a visual
+  active/inactive state.
+- Watch for interaction with decision 19: removing system decorations changes the window's frame
+  extents, so the X11 read-back offset that the placement restore corrects for may change or vanish.
+  **Re-verify the placement round trip on Linux after this slice.**
+- Expected to also fix the residual startup **frame** jump on Linux: `Opacity = 0` hides only the
+  client area, and WSLg draws the frame server-side, so today an empty frame still jumps into place.
+  With no system decorations the whole window is client area and the hide covers all of it. If that
+  holds, revisit whether the pre-show hide still needs a full settle delay on Windows.
+- **Automated verification:** full suite green on both platforms; both AOT publishes clean.
+- **Manual verification (STOP — wait for user):** user drags, resizes from every edge and corner,
+  maximizes/restores by button and by double-click, minimizes, and confirms the frame looks the same
+  on Windows and Linux.
 
 ---
 
@@ -209,6 +235,8 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 
 Items discussed during planning but explicitly deferred out of MVP. Captured here so nothing is lost.
 
+- **Clamp a restored window to the screen it lands on.** `WindowPlacementTracker.Apply` clamps the saved size *upward* only (to `MinWidth`/`MinHeight`), and `IsReachable` checks only that a 120×24 strip of title bar is on a screen — never that the window *fits*. Because size is saved in device-independent pixels (correctly — see below), a window saved on a large display at 150% can be restored taller than a smaller display, leaving the bottom off-screen. Unreachable on the current single 3840×2160 monitor, so deferred: a window would need to exceed the working area after scaling. Fix would clamp width/height to the target screen's working area before applying.
+- **User-selectable theme.** A Light/Dark/System choice in the **View** menu, persisted in `settings.json` beside the other restored state. Decision 18 settled MVP behaviour (follow the OS, dark where it says nothing); this would let the user override it. The menu and the settings store already exist, so it is View-menu plumbing plus one `AppSettings` field.
 - **Rich source-selection UI.** Replace the MVP folder-path textbox with: a **Browse** button (native folder picker), a **Recursive** checkbox, a **format wildcard** input (e.g. `*.jpg;*.png`), and a **filename wildcard** input (e.g. `IMG_*`, `PIC_*`). The `IImageSource` interface already accepts these — pure UI + ViewModel work.
 - **Save/export processed images.** Two flavors: (a) *Export all* — user picks output folder; every processed image is written. (b) *Save current* — save the currently-viewed single-view image. Requires: format selection, filename convention (suffix vs sibling folder), overwrite policy.
 - **Configurable / reorderable pipeline UI.** Expose per-user processor reordering and enable/disable in the UI. Architecture already supports this (processors resolved as `IEnumerable<IImageProcessor>` with an `Order` property); MVP just uses static composition-root ordering.
@@ -240,6 +268,6 @@ Items discussed during planning but explicitly deferred out of MVP. Captured her
 **At MVP:**
 - All per-slice steps above on Windows for the final slice.
 - `dotnet publish -c Release -r linux-x64` AOT publish.
-- Smoke test on Linux (WSL2 or VM).
+- Smoke test on Linux (WSL2 — decision 17).
 - Full test suite green.
 - **Final manual developer verification.** User exercises the whole MVP flow end-to-end and formally accepts MVP.

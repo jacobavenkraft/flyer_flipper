@@ -3,13 +3,14 @@ using FlyerFlipper.Core.Imaging;
 using FlyerFlipper.Core.Pipeline;
 using FlyerFlipper.Core.Source;
 using Moq;
+using FlyerFlipper.Tests.TestSupport;
 
 namespace FlyerFlipper.Tests.Pipeline;
 
 public class ImageProcessingPipelineTests
 {
     private static ProcessedImage Input(int width = 40, int height = 20)
-        => ProcessedImage.FromSource(new SourceImage(new ImageReference(@"C:\flyers\flyer.png"), TestImages.Buffer(width, height)));
+        => ProcessedImage.FromSource(new SourceImage(new ImageReference(TestPaths.File("flyers", "flyer.png")), TestImages.Buffer(width, height)));
 
     [Fact]
     public void NoProcessors_ReturnsInputUnchanged()
