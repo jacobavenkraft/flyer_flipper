@@ -47,7 +47,7 @@ internal sealed class AppHarness : IDisposable
         Resize = new ResizeProcessor(ResizeSettings);
         Pipeline = new ImageProcessingPipeline([ChannelMap, Invert, Grayscale, Flip, Rotate, Resize]);
         Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, Pipeline, new SkiaThumbnailService(), new AvaloniaBitmapFactory());
-        ImageSource = new ImageSourceViewModel(Catalog);
+        ImageSource = new ImageSourceViewModel(Catalog, FolderPicker);
         Grid = new ThumbnailGridViewModel(Store, Layout, Viewport);
         Single = new SingleImageViewModel(Viewport, Store);
         // Deliberately out of order: the host sorts by IProcessorControlProvider.Order, as Program.cs relies on.
@@ -99,6 +99,9 @@ internal sealed class AppHarness : IDisposable
     public ImageStore<Bitmap> Store { get; }
 
     public FakeImageLoader Loader { get; } = new();
+
+    /// <summary>Returns whatever <see cref="NextPickedFolder"/> holds; null means the user cancelled.</summary>
+    public StubFolderPicker FolderPicker { get; } = new();
 
     public ImageSourceViewModel ImageSource { get; }
 

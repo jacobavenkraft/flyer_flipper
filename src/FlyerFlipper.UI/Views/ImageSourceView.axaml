@@ -20,15 +20,22 @@
   <StackPanel Spacing="6">
     <TextBlock Text="Image folder" FontWeight="SemiBold"/>
 
-    <Grid ColumnDefinitions="*,Auto">
+    <Grid ColumnDefinitions="*,Auto,Auto">
       <TextBox x:Name="FolderPathInput"
                Text="{Binding FolderPath}"
-               Watermark="Paste a folder path and press Enter">
+               Watermark="Paste a folder path, or browse">
         <TextBox.KeyBindings>
           <KeyBinding Gesture="Enter" Command="{Binding LoadFolderCommand}"/>
         </TextBox.KeyBindings>
       </TextBox>
-      <Button Grid.Column="1"
+      <Button x:Name="BrowseButton"
+              Grid.Column="1"
+              Margin="6,0,0,0"
+              Content="…"
+              ToolTip.Tip="Browse for a folder"
+              Command="{Binding BrowseCommand}"/>
+      <Button x:Name="LoadButton"
+              Grid.Column="2"
               Margin="6,0,0,0"
               Content="Load"
               Command="{Binding LoadFolderCommand}"/>

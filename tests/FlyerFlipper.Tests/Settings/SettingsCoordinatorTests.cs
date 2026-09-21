@@ -72,7 +72,7 @@ public class SettingsCoordinatorTests
             Viewport = new ViewportModeService(Catalog);
             Grayscale = new GrayscaleProcessor(GrayscaleSettings);
             Resize = new ResizeProcessor(ResizeSettings);
-            ImageSource = new ImageSourceViewModel(Catalog);
+            ImageSource = new ImageSourceViewModel(Catalog, new StubFolderPicker());
             Tabs = new ProcessorTabHostViewModel([new HeaderOnlyProvider("Grayscale", 100), new HeaderOnlyProvider("Resize", 200)]);
             Coordinator = new SettingsCoordinator(
                 Store, Catalog, Layout, Viewport, [Grayscale, Resize, new DiagnosticLoggingProcessorStub()], ImageSource, Tabs, Window, Time);

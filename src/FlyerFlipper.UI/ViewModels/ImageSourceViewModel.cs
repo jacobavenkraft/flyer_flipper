@@ -1,12 +1,14 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FlyerFlipper.Core.Source;
+using FlyerFlipper.UI.Dialogs;
 
 namespace FlyerFlipper.UI.ViewModels;
 
 public sealed partial class ImageSourceViewModel : ObservableObject
 {
     private readonly IImageCatalog _catalog;
+    private readonly IFolderPicker _folderPicker;
 
     private CancellationTokenSource? _loadCts;
 
@@ -19,9 +21,27 @@ public sealed partial class ImageSourceViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasError;
 
-    public ImageSourceViewModel(IImageCatalog catalog)
+    public ImageSourceViewModel(IImageCatalog catalog, IFolderPicker folderPicker)
     {
         _catalog = catalog;
+        _folderPicker = folderPicker;
+    }
+
+    /// <summary>
+    /// Chooses a folder through the platform's picker, then loads it. Cancelling changes nothing —
+    /// in particular it does not clear the path already in the box.
+    /// </summary>
+    [RelayCommand]
+    private async Task BrowseAsync()
+    {
+        var picked = await _folderPicker.PickFolderAsync(NormalizePath(FolderPath));
+        if (string.IsNullOrWhiteSpace(picked))
+        {
+            return;
+        }
+
+        FolderPath = picked;
+        await LoadFolderAsync();
     }
 
     [RelayCommand(AllowConcurrentExecutions = true)]

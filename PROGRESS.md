@@ -17,10 +17,9 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 **Slice 5 (processor tabs + grayscale + resize + image scaling): DONE — approved** (commit `086a335`). Design choices: PLAN.md decision 15.
 **Slice 6 (settings persistence): DONE — approved** (commit `69d1396`). Design choices: PLAN.md decision 16.
 **Slice 7 (polish + Linux verification): DONE — MVP ACCEPTED by the user 2026-09-20.**
-**Slice 8 (custom window chrome): COMMITTED** (`ad63d1e`) — green on both platforms and committed by
-the user, but the hands-on pass (drag, the eight resize grips, maximize by button and by double-click,
-minimize, close, frame comparison) has **not been reported back**. Slice 8 was added *after* MVP
-acceptance, so nothing here blocks the MVP.
+**Slices 8–11: DONE — committed and confirmed by the user 2026-09-20.** Custom window chrome
+(`ad63d1e`), flip + rotate (`8419bfe`), channel map (`5af91b5`), colour invert (`e002bbd`).
+All post-MVP work. Suite at **366/366** on both platforms, both AOT publishes clean.
 
 Old Slice 7 status line, kept for the record:
 **Slice 7 (polish + Linux verification): WAS IN PROGRESS** (started 2026-09-18; resumed 2026-09-20). Linux environment: **WSL2** (user's choice), Ubuntu 26.04.1. Automated verification is **green on both platforms** — 275/275 tests on Windows and Linux, clean AOT publish for `win-x64` and `linux-x64`. The user's first Linux smoke test found two real defects (theme, window placement); both are **fixed and verified**, and it is back with the user for re-verification and MVP acceptance.
@@ -505,6 +504,7 @@ Scope per `PLAN.md § Slice 7`: polish + Linux verification + MVP acceptance.
 ### Commit state (as of 2026-09-20)
 
 **Everything is committed and pushed. The working tree is clean and `main` matches `origin/main`.**
+`HEAD` is `e002bbd`. Slices 1–11 are all committed and confirmed good by the user (2026-09-20).
 
 | Commit | What |
 |---|---|
@@ -512,6 +512,9 @@ Scope per `PLAN.md § Slice 7`: polish + Linux verification + MVP acceptance.
 | `53b848d` | Window placement fixes |
 | `0b87c0c` | Final cleanup — end of Slice 7 (**MVP accepted here**) |
 | `ad63d1e` | Custom window chrome — Slice 8 |
+| `8419bfe` | Flip and rotate processors — Slice 9 |
+| `5af91b5` | Channel map processor — Slice 10 |
+| `e002bbd` | Colour invert processor — Slice 11 |
 
 > Check state with **Windows** `git status`, not with git inside WSL. The repo lives on `/mnt/d` and is
 > checked out CRLF, but WSL's git has its own `core.autocrlf` setting, so from the distro it reports
@@ -834,10 +837,9 @@ formal MVP acceptance. Do not start new work until they report back.
 2. Read the memory index at `C:\Users\jacob\.claude\projects\D--001-source\memory\MEMORY.md`.
    The per-slice manual verification gate (`feedback_per_slice_manual_verification.md`) governs how
    Slice 7 ends: hand off, then STOP for the user's MVP acceptance.
-3. Slices 1–8 are committed and pushed (`HEAD` = `ad63d1e`); the MVP was accepted on 2026-09-20 at the
-   end of Slice 7. The tree is clean. Slice 8's hands-on verification pass was never reported back —
-   ask about it before assuming it passed.
-4. Re-establish the baseline on Windows: `dotnet test -c Release` should report **295/295**.
+3. Slices 1–11 are committed and pushed (`HEAD` = `e002bbd`) and all confirmed good by the user. The
+   MVP was accepted on 2026-09-20 at the end of Slice 7; slices 8–11 are post-MVP. The tree is clean.
+4. Re-establish the baseline on Windows: `dotnet test -c Release` should report **366/366**.
 5. The Linux toolchain is fully set up. To confirm it survived a WSL restart:
 
    ```bash
@@ -856,13 +858,8 @@ formal MVP acceptance. Do not start new work until they report back.
 
 ### Open question for the user, carried over
 
-1. **The Slice 7 STOP gate:** the user's re-verification and formal MVP acceptance. Nothing else in
-   Slice 7 is outstanding.
-2. **Slice 8 (custom window chrome, decision 20) is agreed but deliberately not started** — the user
-   asked on 2026-09-20 to hold it until the Slice 7 changes are approved. Do not begin it before
-   that approval.
-3. Carried over, non-blocking: whether to commit the Slice 7 fixes now or as a single commit after
-   acceptance. Still uncommitted as of 2026-09-20.
+None. MVP is accepted, slices 8–11 are committed and confirmed, and the tree is clean. Ask the user
+what to pick up next; the Future enhancements list in `PLAN.md` is the menu.
 
 
 ---
@@ -1182,3 +1179,103 @@ re-premultiply around the operation, rounding every partially transparent pixel.
 - [ ] **Manual verification (STOP — user):** inverted images look right, inverting twice returns the
       original, the setting survives a restart. Worth a PNG with transparency if one is handy — that is
       where the premultiplied arithmetic shows.
+
+
+---
+
+## Slices 9–11 — verified and committed (2026-09-20)
+
+The user confirmed all three processor slices and committed them:
+
+| Commit | Slice |
+|---|---|
+| `8419bfe` | Flip and rotate |
+| `5af91b5` | Channel map |
+| `e002bbd` | Colour invert |
+
+Slice 8 (custom chrome, `ad63d1e`) is also confirmed. The per-slice "still to do" verification lists
+above are all satisfied; they are kept as a record of what was checked, not as open work.
+
+Processor tabs now ship as **Channels · Invert · Grayscale · Flip · Rotate · Resize**
+(`ProcessorOrder` 50 / 75 / 100 / 120 / 150 / 200 — defaults, not constraints; see decision 21).
+
+### Worth knowing before adding the next processor
+
+The shape is now well established, and each of the last three slices needed the same six touch points:
+
+1. `Core/Processors/<Name>Options.cs` — validate any enum in the constructor;
+   `System.Text.Json` will happily deserialize an out-of-range number otherwise.
+2. `Core/Processors/ProcessorOrder.cs` — a new default order value.
+3. `Imaging/Processors/<Name>Processor.cs` + register the options type in `ProcessorOptionsJsonContext`.
+4. `UI`: settings view, view model, control provider.
+5. `App/Program.cs`: three `AddSingleton` lines.
+6. **`tests/.../Headless/AppHarness.cs`** — easy to forget, and forgetting it means the new tab has no UI
+   coverage while everything still looks green. Adding it there also breaks any test that hard-codes the
+   tab list or a tab index, which is the intended alarm.
+
+Two pixel-level rules learned the hard way, both worth re-reading before writing a colour processor:
+**the buffers are BGRA premultiplied.** Channel moves are exact and need no arithmetic; inversion is
+`alpha - value`, never `255 - value`; and an `SKColorFilter` colour matrix unpremultiplies and
+re-premultiplies around the operation, rounding every partially transparent pixel.
+
+
+---
+
+## Slice 12 — folder browse button (implemented 2026-09-20, awaiting verification)
+
+Per PLAN.md decision 24. A "…" button between the folder box and **Load**.
+
+### No custom browser was needed
+
+The request allowed a hand-written folder browser as a last resort. It is not needed: Avalonia's
+`StorageProvider.OpenFolderPickerAsync` covers every platform here, confirmed by probe rather than
+assumed — which mattered, because the theme work had already shown WSLg has **no XDG desktop portal**,
+and the portal is what Avalonia's Linux picker normally uses.
+
+| Platform | Provider | `CanPickFolder` |
+|---|---|---|
+| Windows | `Avalonia.Win32.Win32StorageProvider` (native dialog) | true |
+| Linux, real desktop | XDG desktop portal | true (expected; not exercised here) |
+| Linux, WSLg (no portal) | `Avalonia.Platform.Storage.FallbackStorageProvider` | **true** |
+
+So: one code path, no platform branching, no `UseManagedSystemDialogs` opt-in. Avalonia already falls
+back to its own managed dialog where no portal exists.
+
+### Shape
+
+`IFolderPicker` keeps the view model testable without a window; `StorageProviderFolderPicker` finds the
+window at call time via the application lifetime, the same approach `AvaloniaApplicationShutdown` uses,
+because the picker is registered in DI before any window exists. The dialog opens at the current folder
+when there is one (normalized first, so a pasted quoted path still works), and a folder that has since
+been deleted just means "no preference" rather than an error.
+
+Picking sets the path **and loads it** — what a browse button implies. Cancelling changes nothing; a test
+pins specifically that it does not clear a path already typed.
+
+`TryGetLocalPath()` can return null for a location with no file-system path (a portal handing back a
+document-provider URI), which is treated as a cancel, since nothing downstream could open one.
+
+### A control character got into a source file
+
+While generating the new tests through a Python patch script, `\a` in a C# verbatim path literal was
+interpreted by **Python** as a bell character, which landed in the `.cs` file as a literal `0x07`. The
+tests still passed — it was only a fake path in a mock — and it is invisible in normal output; it showed
+up only under `cat -A`. Removed, and a repo-wide scan for control characters in `src` and `tests` came
+back clean. Worth remembering when writing C# escapes through a Python heredoc: use raw strings.
+
+### Verified
+
+| | Windows | Linux |
+|---|---|---|
+| Tests | **371/371** | **371/371** |
+| AOT publish | clean, no warnings | clean, no warnings |
+
+5 new tests. The UI one drives a **real mouse click** through headless input rather than
+`RaiseEvent(ClickEvent)` — which does not invoke a `Command` binding, only a `Click` handler, and so
+passed vacuously at first.
+
+### Still to do
+
+- [ ] **Manual verification (STOP — user):** browse on Windows (expect the native dialog) and on Linux;
+      confirm it opens at the current folder, that picking loads the images, and that cancelling leaves
+      the typed path untouched.

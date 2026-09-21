@@ -35,6 +35,7 @@ The pre-existing repo `D:\001_source\AvaloniaControls` establishes the user's ba
 | 21 | **Flip and rotate processors (decided 2026-09-20; Slice 9).** Two further built-in processors, added after MVP. **Flip** mirrors left↔right and/or top↕bottom (independent checkboxes; both together equal a 180° turn). **Rotate** turns clockwise by a quarter-turn multiple — 90/180/270 only, no arbitrary angles. They are **separate processors with separate tabs**, as asked, not one combined "orientation" processor. Built as in-process `IImageProcessor`s like grayscale and resize; the native plugin architecture (decisions 10–12) remains a future enhancement. **Default pipeline order: grayscale (100) → flip (120) → rotate (150) → resize (200)** — a default, explicitly **not** a fixed property of the pipeline. Geometry before resize means the resize box applies to the final orientation rather than being undone by a later quarter turn swapping the sides; flip before rotate because the two do not commute and a default must pick one. Reordering is legitimate and produces real, sometimes wanted, visual differences — resizing first then rotating is a valid thing to want. User-controlled reordering is already a planned enhancement, so **no UI text presents this sequence as permanent** (decided with the user 2026-09-20). UI labels say "mirror left ↔ right" / "top ↕ bottom" rather than "flip horizontal", which is read both ways. |
 | 22 | **Channel map processor (decided 2026-09-20; Slice 10).** A third post-MVP processor: each output colour channel reads its value from any source channel. Modelled as **destination ← source, one source per destination** rather than the user's source → destination(s) phrasing — the two have identical expressive power (sending blue everywhere is just naming blue for each output), but one-source-per-destination makes a destination with two sources unrepresentable. **No combination is rejected**: collapsing every channel onto one is legitimate and the result is meant to look like that. Alpha is not remappable. Implemented by **moving bytes, not via an `SKColorFilter` matrix** — Skia applies colour matrices to *unpremultiplied* colours, so a matrix would divide by alpha and multiply back, rounding every partially transparent pixel and destroying colour where alpha is 0; moving whole channels within a premultiplied pixel needs no arithmetic and stays exact. **Default order 50, before grayscale**, so the two compose: rearranging channels changes the resulting luma, whereas after grayscale every channel is equal and a remap would do nothing. As with decision 21, that is a default only. |
 | 23 | **Invert processor (decided 2026-09-20; Slice 11).** A fourth post-MVP processor: replace every colour with its opposite. Single on/off setting, no per-channel options. **Default order 75 — after the channel map, before grayscale**, as the user specified: it inverts the channels the user chose, and grayscale then weighs the inverted result. Like the channel map it works **on the bytes**, and the arithmetic is <c>alpha − value</c>, **not** <c>255 − value</c>: the buffers are premultiplied, so a stored channel is <c>colour × alpha</c> and inverting the colour gives <c>(1 − colour) × alpha</c> = <c>alpha − stored</c>. The naive form is correct only for fully opaque pixels and otherwise yields a colour larger than its own alpha — an invalid premultiplied pixel that renders as a bright halo. Alpha itself is untouched. |
+| 24 | **Folder browse button (decided 2026-09-20; Slice 12).** A "…" button beside the folder box opens the platform's own folder picker, via Avalonia's `StorageProvider.OpenFolderPickerAsync`. **No custom browser and no platform branching were needed** — probes confirmed `CanPickFolder` is true everywhere that matters: Windows resolves `Win32StorageProvider` (the native dialog), a real Linux desktop uses the XDG portal, and even WSLg — which has no portal — gets Avalonia's `FallbackStorageProvider`. The view model depends on an `IFolderPicker` interface so it stays testable without a window; the implementation finds the window at call time, as `AvaloniaApplicationShutdown` does. Picking a folder sets the path **and loads it**; cancelling changes nothing, in particular it does not clear a path already typed. |
 
 ---
 
@@ -177,7 +178,7 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - **Automated verification:** Full test suite green on Windows; both `win-x64` and `linux-x64` AOT publish clean.
 - **Manual verification (STOP — MVP acceptance):** User runs on Windows and (optionally) Linux, exercises the whole MVP flow end-to-end, formally accepts MVP.
 
-### Slice 8 — Custom window chrome (committed `ad63d1e`; hands-on pass not yet reported)
+### Slice 8 — Custom window chrome (verified; committed `ad63d1e`)
 
 - `SystemDecorations="None"` on `MainWindow`; custom title bar row above the existing menu bar.
 - Title bar: app icon, `Title`, and minimize / maximize-restore / close buttons, themed from the app's
@@ -197,7 +198,7 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
   maximizes/restores by button and by double-click, minimizes, and confirms the frame looks the same
   on Windows and Linux.
 
-### Slice 9 — Flip and rotate processors (implemented; awaiting manual verification)
+### Slice 9 — Flip and rotate processors (verified; committed `8419bfe`)
 
 Per decision 21. First work after MVP acceptance.
 
@@ -210,7 +211,7 @@ Per decision 21. First work after MVP acceptance.
   rotation direction and flip axes match expectations, that a quarter turn swaps the image dimensions,
   and that both survive a restart.
 
-### Slice 10 — Channel map processor (implemented; awaiting manual verification)
+### Slice 10 — Channel map processor (verified; committed `5af91b5`)
 
 Per decision 22.
 
@@ -221,7 +222,7 @@ Per decision 22.
 - **Manual verification (STOP — wait for user):** exercise the tab on a real folder; confirm swaps look
   right, that one source can feed all three outputs, and that the settings survive a restart.
 
-### Slice 11 — Invert processor (implemented; awaiting manual verification)
+### Slice 11 — Invert processor (verified; committed `e002bbd`)
 
 Per decision 23.
 
@@ -231,6 +232,17 @@ Per decision 23.
 - **Automated verification:** full suite green on both platforms; both AOT publishes clean.
 - **Manual verification (STOP — wait for user):** confirm inverted images look right, that inverting
   twice returns the original, and that the setting survives a restart.
+
+### Slice 12 — Folder browse button (implemented; awaiting manual verification)
+
+Per decision 24.
+
+- `UI/Dialogs`: `IFolderPicker` + `StorageProviderFolderPicker`.
+- `ImageSourceViewModel.BrowseCommand`; a "…" button between the folder box and **Load**.
+- **Automated verification:** full suite green on both platforms; both AOT publishes clean.
+- **Manual verification (STOP — wait for user):** browse to a folder on Windows and on Linux; confirm
+  the dialog opens at the current folder, that picking loads the images, and that cancelling leaves the
+  typed path alone.
 
 ---
 
@@ -285,7 +297,7 @@ Items discussed during planning but explicitly deferred out of MVP. Captured her
   it, then restore the real size — which trades the flash for a visible grow-into-place.
 - **Clamp a restored window to the screen it lands on.** `WindowPlacementTracker.Apply` clamps the saved size *upward* only (to `MinWidth`/`MinHeight`), and `IsReachable` checks only that a 120×24 strip of title bar is on a screen — never that the window *fits*. Because size is saved in device-independent pixels (correctly — see below), a window saved on a large display at 150% can be restored taller than a smaller display, leaving the bottom off-screen. Unreachable on the current single 3840×2160 monitor, so deferred: a window would need to exceed the working area after scaling. Fix would clamp width/height to the target screen's working area before applying.
 - **User-selectable theme.** A Light/Dark/System choice in the **View** menu, persisted in `settings.json` beside the other restored state. Decision 18 settled MVP behaviour (follow the OS, dark where it says nothing); this would let the user override it. The menu and the settings store already exist, so it is View-menu plumbing plus one `AppSettings` field.
-- **Rich source-selection UI.** Replace the MVP folder-path textbox with: a **Browse** button (native folder picker), a **Recursive** checkbox, a **format wildcard** input (e.g. `*.jpg;*.png`), and a **filename wildcard** input (e.g. `IMG_*`, `PIC_*`). The `IImageSource` interface already accepts these — pure UI + ViewModel work.
+- **Rich source-selection UI.** *(Browse button delivered in Slice 12 — decision 24.)* Still to add to the folder-path row: a **Recursive** checkbox, a **format wildcard** input (e.g. `*.jpg;*.png`), and a **filename wildcard** input (e.g. `IMG_*`, `PIC_*`). The `IImageSource` interface already accepts these — pure UI + ViewModel work.
 - **Save/export processed images.** Two flavors: (a) *Export all* — user picks output folder; every processed image is written. (b) *Save current* — save the currently-viewed single-view image. Requires: format selection, filename convention (suffix vs sibling folder), overwrite policy.
 - **Configurable / reorderable pipeline UI.** Expose per-user processor reordering and enable/disable in the UI. Architecture already supports this (processors resolved as `IEnumerable<IImageProcessor>` with an `Order` property); MVP just uses static composition-root ordering.
 - **User-installable processor plugins.** Full plugin architecture per decisions 10–12:

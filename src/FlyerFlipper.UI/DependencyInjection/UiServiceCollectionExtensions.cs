@@ -7,6 +7,7 @@ using FlyerFlipper.UI.ViewModels;
 using FlyerFlipper.UI.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using FlyerFlipper.UI.Dialogs;
 
 namespace FlyerFlipper.UI.DependencyInjection;
 
@@ -19,6 +20,7 @@ public static class UiServiceCollectionExtensions
         services.AddSingleton<IDisplayImageFactory<Bitmap>, AvaloniaBitmapFactory>();
         services.AddSingleton<IImageStore<Bitmap>, ImageStore<Bitmap>>();
 
+        services.AddSingleton<IFolderPicker, StorageProviderFolderPicker>();
         services.AddSingleton<ImageSourceViewModel>();
         services.AddSingleton<ThumbnailGridViewModel>();
         services.AddSingleton<SingleImageViewModel>();
