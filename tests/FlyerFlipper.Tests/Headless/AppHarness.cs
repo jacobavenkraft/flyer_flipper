@@ -39,11 +39,12 @@ internal sealed class AppHarness : IDisposable
         Catalog = new ImageCatalog(_source.Object);
         Layout = new LayoutModeService();
         Viewport = new ViewportModeService(Catalog);
+        ChannelMap = new ChannelMapProcessor(ChannelMapSettings);
         Grayscale = new GrayscaleProcessor(GrayscaleSettings);
         Flip = new FlipProcessor(FlipSettings);
         Rotate = new RotateProcessor(RotateSettings);
         Resize = new ResizeProcessor(ResizeSettings);
-        Pipeline = new ImageProcessingPipeline([Grayscale, Flip, Rotate, Resize]);
+        Pipeline = new ImageProcessingPipeline([ChannelMap, Grayscale, Flip, Rotate, Resize]);
         Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, Pipeline, new SkiaThumbnailService(), new AvaloniaBitmapFactory());
         ImageSource = new ImageSourceViewModel(Catalog);
         Grid = new ThumbnailGridViewModel(Store, Layout, Viewport);
@@ -51,6 +52,7 @@ internal sealed class AppHarness : IDisposable
         // Deliberately out of order: the host sorts by IProcessorControlProvider.Order, as Program.cs relies on.
         ProcessorTabs = new ProcessorTabHostViewModel([
             new ResizeControlProvider(ResizeSettings),
+            new ChannelMapControlProvider(ChannelMapSettings),
             new RotateControlProvider(RotateSettings),
             new GrayscaleControlProvider(GrayscaleSettings),
             new FlipControlProvider(FlipSettings),
@@ -62,6 +64,8 @@ internal sealed class AppHarness : IDisposable
 
     public ProcessorSettings<ResizeOptions> ResizeSettings { get; } = new(new ResizeOptions());
 
+    public ProcessorSettings<ChannelMapOptions> ChannelMapSettings { get; } = new(new ChannelMapOptions());
+
     public ProcessorSettings<FlipOptions> FlipSettings { get; } = new(new FlipOptions());
 
     public ProcessorSettings<RotateOptions> RotateSettings { get; } = new(new RotateOptions());
@@ -69,6 +73,8 @@ internal sealed class AppHarness : IDisposable
     public GrayscaleProcessor Grayscale { get; }
 
     public ResizeProcessor Resize { get; }
+
+    public ChannelMapProcessor ChannelMap { get; }
 
     public FlipProcessor Flip { get; }
 

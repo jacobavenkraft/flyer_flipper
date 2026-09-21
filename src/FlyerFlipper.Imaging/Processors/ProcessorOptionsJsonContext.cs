@@ -8,6 +8,7 @@ namespace FlyerFlipper.Imaging.Processors;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(GrayscaleOptions))]
+[JsonSerializable(typeof(ChannelMapOptions))]
 [JsonSerializable(typeof(ResizeOptions))]
 [JsonSerializable(typeof(FlipOptions))]
 [JsonSerializable(typeof(RotateOptions))]

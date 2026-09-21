@@ -34,6 +34,10 @@ internal static class Program
 
         // Processors (IImageProcessor), resolved by the pipeline in Order sequence. Each configurable
         // processor is paired with a settings object (shared with its tab) and an IProcessorControlProvider.
+        builder.Services.AddSingleton(new ProcessorSettings<ChannelMapOptions>(new ChannelMapOptions()));
+        builder.Services.AddSingleton<IImageProcessor, ChannelMapProcessor>();
+        builder.Services.AddSingleton<IProcessorControlProvider, ChannelMapControlProvider>();
+
         builder.Services.AddSingleton(new ProcessorSettings<GrayscaleOptions>(new GrayscaleOptions()));
         builder.Services.AddSingleton<IImageProcessor, GrayscaleProcessor>();
         builder.Services.AddSingleton<IProcessorControlProvider, GrayscaleControlProvider>();

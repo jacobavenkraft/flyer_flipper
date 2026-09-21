@@ -1076,3 +1076,68 @@ axes equals a 180° turn, and that four 90° turns return the original.
       (e.g. 800×400) and confirm the result respects the box in its final orientation — i.e. that the
       default order behaves as intended.
 - [ ] Confirm no remaining UI text implies the pipeline order is fixed.
+
+
+---
+
+## Slice 10 — channel map processor (implemented 2026-09-20, awaiting verification)
+
+Per PLAN.md decision 22. A "Channels" tab where each output colour channel reads from any source channel.
+
+### Shape of the options
+
+The request was phrased source → destination(s) ("red can be assigned to blue"; "each channel should be
+able to be assigned to one or more other channels"). Modelled the other way round — **destination ←
+source, exactly one source per destination**. Identical expressive power (blue into all three is
+`Red = Blue, Green = Blue, Blue = Blue`), but a destination with *two* sources, which has no meaning,
+cannot be represented at all. Flagged to the user when built rather than silently reinterpreted.
+
+No combination is rejected. Collapsing every channel onto one is a legitimate request and the result is
+supposed to look like that.
+
+### Why bytes, not a colour matrix
+
+`GrayscaleProcessor` uses an `SKColorFilter` colour matrix, so that was the obvious route. It would have
+been wrong here: **Skia applies colour matrices to unpremultiplied colours.** The buffers are BGRA
+*premultiplied*, so a matrix divides by alpha and multiplies back — rounding every partially transparent
+pixel, and destroying colour entirely where alpha is 0. Moving whole channels needs no arithmetic at all:
+every channel in a premultiplied pixel carries the same alpha factor, so copying one over another stays
+premultiplied and stays exact. `LeavesAlphaAlone_AndDoesNotRoundPartiallyTransparentPixels` pins that
+with an alpha of 17.
+
+Two details the byte loop has to get right, both covered: all three source channels are read *before* any
+is written (a rotate like `R←G, G←B, B←R` reads channels it also overwrites), and rows are walked by
+**stride**, not by width × 4, so padded buffers are not shifted.
+
+### Default order
+
+`ChannelMap` is 50, i.e. **before** grayscale, so the two compose: rearranging channels changes which
+colours dominate the resulting luma. After grayscale every channel is already equal and a remap would do
+nothing at all. A default, not a rule — same framing as decision 21.
+
+Consequence worth noting: **"Channels" is now the first tab**, where "Grayscale" used to be.
+
+### Test fragility found and fixed
+
+Two existing tests located the folder path box with `OfType<TextBox>().Single()` and a
+`FindAncestorOfType<NumericUpDown>() is null` filter — both of which quietly depended on there being
+exactly one or two text boxes in the whole window. The new tab's combo boxes broke that. Rather than
+patch the filters, the folder box is now **named** (`x:Name="FolderPathInput"`) and both tests look it up
+by name. `GrayscaleCheckbox_AppliesImmediately` also had to stop assuming grayscale is the selected tab.
+
+### Verified
+
+| | Windows | Linux |
+|---|---|---|
+| Tests | **353/353** | **353/353** |
+| AOT publish | clean, no warnings | clean, no warnings |
+
+24 new tests, including a red/blue swap, a three-way rotate, one source feeding all three outputs, the
+partially-transparent exactness check, a padded-stride image, JSON round trip with channels written as
+names, and rejection of out-of-range channel numbers.
+
+### Still to do
+
+- [ ] **Manual verification (STOP — user):** exercise the Channels tab on a real folder — swaps look
+      right, one source can feed all three, settings survive a restart.
+- [ ] Confirm the tab order change (Channels first) is acceptable.

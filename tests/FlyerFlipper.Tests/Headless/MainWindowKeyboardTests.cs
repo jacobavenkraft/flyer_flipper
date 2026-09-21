@@ -100,7 +100,7 @@ public class MainWindowKeyboardTests
         var window = app.ShowWindow();
         await app.LoadFolderAsync(3);
         app.Viewport.ShowSingle(1);
-        var textBox = window.GetVisualDescendants().OfType<TextBox>().Single();
+        var textBox = window.GetVisualDescendants().OfType<TextBox>().Single(t => t.Name == "FolderPathInput");
         textBox.Focus();
         textBox.CaretIndex = 3;
         Dispatcher.UIThread.RunJobs();

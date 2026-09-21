@@ -35,9 +35,9 @@ public class ProcessorTabsUiTests
 
         // Order comes from ProcessorOrder, not registration order. This is the shipped default;
         // reordering the pipeline is a planned enhancement.
-        Assert.Equal(["Grayscale", "Flip", "Rotate", "Resize"], app.ProcessorTabs.Tabs.Select(t => t.Header));
-        Assert.Equal(4, tabControl.ItemCount);
-        var folderBox = window.GetVisualDescendants().OfType<TextBox>().First(t => t.FindAncestorOfType<NumericUpDown>() is null);
+        Assert.Equal(["Channels", "Grayscale", "Flip", "Rotate", "Resize"], app.ProcessorTabs.Tabs.Select(t => t.Header));
+        Assert.Equal(5, tabControl.ItemCount);
+        var folderBox = window.GetVisualDescendants().OfType<TextBox>().Single(t => t.Name == "FolderPathInput");
         Assert.True(folderBox.TranslatePoint(default, window)!.Value.Y < tabControl.TranslatePoint(default, window)!.Value.Y);
     }
 
@@ -46,12 +46,39 @@ public class ProcessorTabsUiTests
     {
         using var app = new AppHarness();
         var window = app.ShowWindow();
+        Assert.True(app.ProcessorTabs.SelectTab("Grayscale"));
+        Dispatcher.UIThread.RunJobs();
         var checkBox = window.GetVisualDescendants().OfType<CheckBox>().Single(c => Equals(c.Content, "Convert to grayscale"));
 
         checkBox.IsChecked = true;
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(app.GrayscaleSettings.Current.Enabled);
+    }
+
+    [AvaloniaFact]
+    public void ChannelCombos_ApplyImmediately_AndFollowRestoredSettings()
+    {
+        using var app = new AppHarness();
+        var window = app.ShowWindow();
+        Assert.True(app.ProcessorTabs.SelectTab("Channels"));
+        Dispatcher.UIThread.RunJobs();
+
+        window.GetVisualDescendants().OfType<CheckBox>().Single(c => Equals(c.Content, "Remap colour channels")).IsChecked = true;
+        var red = window.GetVisualDescendants().OfType<ComboBox>().Single(c => c.Name == "RedSource");
+        red.SelectedItem = ColorChannel.Blue;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(new ChannelMapOptions(enabled: true, red: ColorChannel.Blue), app.ChannelMapSettings.Current);
+
+        // Settings restored from disk have to move the selections.
+        app.ChannelMapSettings.Update(new ChannelMapOptions(enabled: true, blue: ColorChannel.Green));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(ColorChannel.Red, red.SelectedItem);
+        Assert.Equal(
+            ColorChannel.Green,
+            window.GetVisualDescendants().OfType<ComboBox>().Single(c => c.Name == "BlueSource").SelectedItem);
     }
 
     [AvaloniaFact]

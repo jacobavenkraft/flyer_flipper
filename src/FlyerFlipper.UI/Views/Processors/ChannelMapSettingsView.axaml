@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FlyerFlipper.UI.ViewModels.Processors"
+             x:Class="FlyerFlipper.UI.Views.Processors.ChannelMapSettingsView"
+             x:DataType="vm:ChannelMapSettingsViewModel">
+
+  <StackPanel Spacing="6" Margin="0,8,0,0">
+    <CheckBox Content="Remap colour channels" IsChecked="{Binding Enabled}"/>
+
+    <!--
+      Read as "this output channel takes its value from …". One source per output; naming the same
+      source for several outputs is how a channel is sent to more than one place.
+    -->
+    <Grid Margin="20,4,0,0" ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto"
+          IsEnabled="{Binding Enabled}">
+      <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,6"
+                 Text="Each output channel takes its value from:" Opacity="0.7" FontSize="12"/>
+
+      <TextBlock Grid.Row="1" Grid.Column="0" Text="Red" VerticalAlignment="Center" MinWidth="52"/>
+      <TextBlock Grid.Row="1" Grid.Column="1" Text="←" Margin="0,0,8,0" VerticalAlignment="Center"/>
+      <ComboBox x:Name="RedSource" Grid.Row="1" Grid.Column="2" Margin="0,0,0,4" Width="120"
+                ItemsSource="{Binding Channels}" SelectedItem="{Binding Red}"/>
+
+      <TextBlock Grid.Row="2" Grid.Column="0" Text="Green" VerticalAlignment="Center"/>
+      <TextBlock Grid.Row="2" Grid.Column="1" Text="←" Margin="0,0,8,0" VerticalAlignment="Center"/>
+      <ComboBox x:Name="GreenSource" Grid.Row="2" Grid.Column="2" Margin="0,0,0,4" Width="120"
+                ItemsSource="{Binding Channels}" SelectedItem="{Binding Green}"/>
+
+      <TextBlock Grid.Row="3" Grid.Column="0" Text="Blue" VerticalAlignment="Center"/>
+      <TextBlock Grid.Row="3" Grid.Column="1" Text="←" Margin="0,0,8,0" VerticalAlignment="Center"/>
+      <ComboBox x:Name="BlueSource" Grid.Row="3" Grid.Column="2" Width="120"
+                ItemsSource="{Binding Channels}" SelectedItem="{Binding Blue}"/>
+    </Grid>
+
+    <TextBlock Text="Any combination is allowed, including sending one channel to all three. Transparency is left untouched."
+               Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+  </StackPanel>
+
+</UserControl>

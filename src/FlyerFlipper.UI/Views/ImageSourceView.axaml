@@ -21,7 +21,8 @@
     <TextBlock Text="Image folder" FontWeight="SemiBold"/>
 
     <Grid ColumnDefinitions="*,Auto">
-      <TextBox Text="{Binding FolderPath}"
+      <TextBox x:Name="FolderPathInput"
+               Text="{Binding FolderPath}"
                Watermark="Paste a folder path and press Enter">
         <TextBox.KeyBindings>
           <KeyBinding Gesture="Enter" Command="{Binding LoadFolderCommand}"/>

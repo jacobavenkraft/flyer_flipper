@@ -178,7 +178,7 @@ public class SettingsPersistenceUiTests
             Store = new JsonSettingsStore(settingsPath);
             Tracker = new WindowPlacementTracker();
             Coordinator = new SettingsCoordinator(
-                Store, App.Catalog, App.Layout, App.Viewport, [App.Grayscale, App.Flip, App.Rotate, App.Resize], App.ImageSource, App.ProcessorTabs, Tracker, TimeProvider.System);
+                Store, App.Catalog, App.Layout, App.Viewport, [App.ChannelMap, App.Grayscale, App.Flip, App.Rotate, App.Resize], App.ImageSource, App.ProcessorTabs, Tracker, TimeProvider.System);
         }
 
         public AppHarness App { get; }
