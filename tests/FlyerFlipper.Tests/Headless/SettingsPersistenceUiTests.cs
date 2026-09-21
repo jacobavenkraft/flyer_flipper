@@ -162,7 +162,7 @@ public class SettingsPersistenceUiTests
 
         var window = app.ShowWindow();
 
-        Assert.Equal(1, window.GetVisualDescendants().OfType<TabControl>().Single().SelectedIndex);
+        Assert.Equal(app.ProcessorTabs.SelectedIndex, window.GetVisualDescendants().OfType<TabControl>().Single().SelectedIndex);
         Assert.Equal("Resize", app.ProcessorTabs.SelectedHeader);
     }
 
@@ -178,7 +178,7 @@ public class SettingsPersistenceUiTests
             Store = new JsonSettingsStore(settingsPath);
             Tracker = new WindowPlacementTracker();
             Coordinator = new SettingsCoordinator(
-                Store, App.Catalog, App.Layout, App.Viewport, [App.Grayscale, App.Resize], App.ImageSource, App.ProcessorTabs, Tracker, TimeProvider.System);
+                Store, App.Catalog, App.Layout, App.Viewport, [App.Grayscale, App.Flip, App.Rotate, App.Resize], App.ImageSource, App.ProcessorTabs, Tracker, TimeProvider.System);
         }
 
         public AppHarness App { get; }
@@ -229,7 +229,7 @@ public class SettingsPersistenceUiTests
             first.App.Viewport.SetScaleMode(ViewportScaleMode.FitWithoutEnlarging);
             first.App.GrayscaleSettings.Update(new GrayscaleOptions(true));
             first.App.ResizeSettings.Update(new ResizeOptions(true, 500, 400));
-            first.App.ProcessorTabs.SelectedIndex = 1;
+            Assert.True(first.App.ProcessorTabs.SelectTab("Resize"));
             first.App.Viewport.ShowSingle(4);
             first.Window!.Position = new PixelPoint(70, 60);
             first.Window.Width = 1111;

@@ -40,13 +40,21 @@ internal sealed class AppHarness : IDisposable
         Layout = new LayoutModeService();
         Viewport = new ViewportModeService(Catalog);
         Grayscale = new GrayscaleProcessor(GrayscaleSettings);
+        Flip = new FlipProcessor(FlipSettings);
+        Rotate = new RotateProcessor(RotateSettings);
         Resize = new ResizeProcessor(ResizeSettings);
-        Pipeline = new ImageProcessingPipeline([Grayscale, Resize]);
+        Pipeline = new ImageProcessingPipeline([Grayscale, Flip, Rotate, Resize]);
         Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, Pipeline, new SkiaThumbnailService(), new AvaloniaBitmapFactory());
         ImageSource = new ImageSourceViewModel(Catalog);
         Grid = new ThumbnailGridViewModel(Store, Layout, Viewport);
         Single = new SingleImageViewModel(Viewport, Store);
-        ProcessorTabs = new ProcessorTabHostViewModel([new ResizeControlProvider(ResizeSettings), new GrayscaleControlProvider(GrayscaleSettings)]);
+        // Deliberately out of order: the host sorts by IProcessorControlProvider.Order, as Program.cs relies on.
+        ProcessorTabs = new ProcessorTabHostViewModel([
+            new ResizeControlProvider(ResizeSettings),
+            new RotateControlProvider(RotateSettings),
+            new GrayscaleControlProvider(GrayscaleSettings),
+            new FlipControlProvider(FlipSettings),
+        ]);
         MainViewModel = new MainWindowViewModel(Layout, Viewport, Mock.Of<IApplicationShutdown>(), ImageSource, Grid, Single, ProcessorTabs);
     }
 
@@ -54,9 +62,17 @@ internal sealed class AppHarness : IDisposable
 
     public ProcessorSettings<ResizeOptions> ResizeSettings { get; } = new(new ResizeOptions());
 
+    public ProcessorSettings<FlipOptions> FlipSettings { get; } = new(new FlipOptions());
+
+    public ProcessorSettings<RotateOptions> RotateSettings { get; } = new(new RotateOptions());
+
     public GrayscaleProcessor Grayscale { get; }
 
     public ResizeProcessor Resize { get; }
+
+    public FlipProcessor Flip { get; }
+
+    public RotateProcessor Rotate { get; }
 
     public ImageProcessingPipeline Pipeline { get; }
 

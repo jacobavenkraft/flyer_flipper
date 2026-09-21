@@ -32,6 +32,7 @@ The pre-existing repo `D:\001_source\AvaloniaControls` establishes the user's ba
 | 18 | **Theme (decided 2026-09-20).** Follow the OS where it reports a light/dark preference; fall back to **Dark** where it does not. `App.axaml` keeps `RequestedThemeVariant="Default"`, and `StartupTheme` overrides it to Dark only when nothing can be asked. Windows and macOS always answer; on Linux the answer comes from the XDG desktop portal, and where no portal is installed — as under WSLg — Avalonia would silently fall back to *light*, which is why the app was dark on Windows and light on Linux. Portal presence is detected by looking for its D-Bus service file in the XDG data directories, so startup stays synchronous and AOT-friendly. Rejected: forcing Dark everywhere (ignores the Windows OS setting) and a persisted View-menu toggle (real scope beyond MVP; recorded under Future enhancements). |
 | 19 | **Window placement restore across window managers (decided 2026-09-20).** Restoring the saved position is completed *after* the window is mapped, not only before it is shown, and the tracker re-asks until the window reports the target back (max 5 attempts, 400 ms apart). Forced by two X11/WSLg behaviours that Windows does not exhibit: a position set before the window is mapped is silently discarded, and `Window.Position` is then reported in a different origin than the setter uses (32 px short on both axes). Left alone deliberately: `IsReachable` still centres a genuinely off-screen window, since with the drift fixed that path only triggers for its intended case (a disconnected monitor). |
 | 20 | **Custom window chrome (decided 2026-09-20; Slice 8, not yet started).** The app draws its **own** title bar with `SystemDecorations="None"`: icon, window title, and minimize / maximize-restore / close buttons, themed with the rest of the app so Windows and Linux look identical. Prompted by the Linux smoke test — WSLg's compositor draws server-side decorations from its own theme, so the frame stayed light while the app was dark. The **menu bar keeps its own row** below the title bar; merging the menu into the title bar was offered and **not** chosen. Consequence: the app takes over what the OS provided free — drag-to-move, edge and corner resize, double-click-to-maximize, and snap — via `BeginMoveDrag` / `BeginResizeDrag`. Rejected: `ExtendClientAreaToDecorationsHint` (less work, but the caption buttons still look native to each platform, so it would not deliver the identical look asked for). |
+| 21 | **Flip and rotate processors (decided 2026-09-20; Slice 9).** Two further built-in processors, added after MVP. **Flip** mirrors left↔right and/or top↕bottom (independent checkboxes; both together equal a 180° turn). **Rotate** turns clockwise by a quarter-turn multiple — 90/180/270 only, no arbitrary angles. They are **separate processors with separate tabs**, as asked, not one combined "orientation" processor. Built as in-process `IImageProcessor`s like grayscale and resize; the native plugin architecture (decisions 10–12) remains a future enhancement. **Default pipeline order: grayscale (100) → flip (120) → rotate (150) → resize (200)** — a default, explicitly **not** a fixed property of the pipeline. Geometry before resize means the resize box applies to the final orientation rather than being undone by a later quarter turn swapping the sides; flip before rotate because the two do not commute and a default must pick one. Reordering is legitimate and produces real, sometimes wanted, visual differences — resizing first then rotating is a valid thing to want. User-controlled reordering is already a planned enhancement, so **no UI text presents this sequence as permanent** (decided with the user 2026-09-20). UI labels say "mirror left ↔ right" / "top ↕ bottom" rather than "flip horizontal", which is read both ways. |
 
 ---
 
@@ -174,7 +175,7 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - **Automated verification:** Full test suite green on Windows; both `win-x64` and `linux-x64` AOT publish clean.
 - **Manual verification (STOP — MVP acceptance):** User runs on Windows and (optionally) Linux, exercises the whole MVP flow end-to-end, formally accepts MVP.
 
-### Slice 8 — Custom window chrome (implemented; awaiting manual verification)
+### Slice 8 — Custom window chrome (committed `ad63d1e`; hands-on pass not yet reported)
 
 - `SystemDecorations="None"` on `MainWindow`; custom title bar row above the existing menu bar.
 - Title bar: app icon, `Title`, and minimize / maximize-restore / close buttons, themed from the app's
@@ -193,6 +194,19 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 - **Manual verification (STOP — wait for user):** user drags, resizes from every edge and corner,
   maximizes/restores by button and by double-click, minimizes, and confirms the frame looks the same
   on Windows and Linux.
+
+### Slice 9 — Flip and rotate processors (implemented; awaiting manual verification)
+
+Per decision 21. First work after MVP acceptance.
+
+- `Core/Processors`: `FlipOptions`, `RotateOptions` + `RotationAngle`, and two new `ProcessorOrder` values.
+- `Imaging/Processors`: `FlipProcessor`, `RotateProcessor` (Skia canvas transforms), registered in the
+  JSON context so their settings persist like the others.
+- `UI`: a settings view, view model and control provider for each, registered in `Program.cs`.
+- **Automated verification:** full suite green on both platforms; both AOT publishes clean.
+- **Manual verification (STOP — wait for user):** exercise both tabs on a real folder; confirm the
+  rotation direction and flip axes match expectations, that a quarter turn swaps the image dimensions,
+  and that both survive a restart.
 
 ---
 
@@ -233,6 +247,12 @@ Each slice compiles, runs, and demonstrates observable behavior. Each ends with 
 
 Items discussed during planning but explicitly deferred out of MVP. Captured here so nothing is lost.
 
+- **Verify the window chrome on a real Linux desktop.** WSLg propagates no X cursor changes at all — not
+  even a `TextBox` I-beam — so the resize grips give no hover feedback there whatever cursor shapes are asked for, and it draws a
+  drop shadow
+  for the window surface before the placement restore moves it. Both are compositor behaviour, not app
+  bugs, and neither occurs on Windows. WSLg verifies the app's logic on Linux but not its window-manager
+  behaviour; a Hyper-V Linux VM (decision 17's named fallback) would settle both.
 - **Re-check the Linux startup shadow flash on a real desktop.** Under WSLg the compositor draws a drop
   shadow for the window surface at its first position before the placement restore moves it, so a shadow
   briefly flashes even though the window itself is hidden. It follows surface geometry, so neither

@@ -5,6 +5,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using FlyerFlipper.Core.Processors;
 
 namespace FlyerFlipper.Tests.Headless;
 
@@ -19,7 +20,7 @@ public class ProcessorTabsUiTests
 
     private static NumericUpDown ShowResizeTab(AppHarness app, Window window, string inputName)
     {
-        app.ProcessorTabs.SelectedIndex = 1;
+        Assert.True(app.ProcessorTabs.SelectTab("Resize"));
         Dispatcher.UIThread.RunJobs();
         return window.GetVisualDescendants().OfType<NumericUpDown>().Single(n => n.Name == inputName);
     }
@@ -32,8 +33,10 @@ public class ProcessorTabsUiTests
 
         var tabControl = window.GetVisualDescendants().OfType<TabControl>().Single();
 
-        Assert.Equal(["Grayscale", "Resize"], app.ProcessorTabs.Tabs.Select(t => t.Header));
-        Assert.Equal(2, tabControl.ItemCount);
+        // Order comes from ProcessorOrder, not registration order. This is the shipped default;
+        // reordering the pipeline is a planned enhancement.
+        Assert.Equal(["Grayscale", "Flip", "Rotate", "Resize"], app.ProcessorTabs.Tabs.Select(t => t.Header));
+        Assert.Equal(4, tabControl.ItemCount);
         var folderBox = window.GetVisualDescendants().OfType<TextBox>().First(t => t.FindAncestorOfType<NumericUpDown>() is null);
         Assert.True(folderBox.TranslatePoint(default, window)!.Value.Y < tabControl.TranslatePoint(default, window)!.Value.Y);
     }
@@ -49,6 +52,49 @@ public class ProcessorTabsUiTests
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(app.GrayscaleSettings.Current.Enabled);
+    }
+
+    [AvaloniaFact]
+    public void FlipCheckboxes_ApplyImmediately()
+    {
+        using var app = new AppHarness();
+        var window = app.ShowWindow();
+        Assert.True(app.ProcessorTabs.SelectTab("Flip"));
+        Dispatcher.UIThread.RunJobs();
+
+        var checkBoxes = window.GetVisualDescendants().OfType<CheckBox>().ToList();
+        Check(checkBoxes, "Flip image");
+        Check(checkBoxes, "Mirror top ↕ bottom");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(new FlipOptions(Enabled: true, MirrorVertically: true), app.FlipSettings.Current);
+
+        static void Check(IEnumerable<CheckBox> boxes, string content)
+            => boxes.Single(c => Equals(c.Content, content)).IsChecked = true;
+    }
+
+    [AvaloniaFact]
+    public void RotateRadioButtons_ApplyImmediately_AndFollowRestoredSettings()
+    {
+        using var app = new AppHarness();
+        var window = app.ShowWindow();
+        Assert.True(app.ProcessorTabs.SelectTab("Rotate"));
+        Dispatcher.UIThread.RunJobs();
+
+        window.GetVisualDescendants().OfType<CheckBox>().Single(c => Equals(c.Content, "Rotate image")).IsChecked = true;
+        var oneEighty = window.GetVisualDescendants().OfType<RadioButton>().Single(r => Equals(r.Content, "180°"));
+        oneEighty.Command!.Execute(oneEighty.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(new RotateOptions(enabled: true, angle: RotationAngle.Clockwise180), app.RotateSettings.Current);
+
+        // An angle restored from disk has to move the selection, which is why IsChecked is bound one-way.
+        app.RotateSettings.Update(new RotateOptions(enabled: true, angle: RotationAngle.Clockwise90));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(oneEighty.IsChecked);
+        Assert.True(window.GetVisualDescendants().OfType<RadioButton>()
+            .Single(r => Equals(r.Content, "90° clockwise")).IsChecked);
     }
 
     [AvaloniaFact]

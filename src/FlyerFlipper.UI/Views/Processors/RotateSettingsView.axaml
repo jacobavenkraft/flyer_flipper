@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FlyerFlipper.UI.ViewModels.Processors"
+             xmlns:proc="using:FlyerFlipper.Core.Processors"
+             x:Class="FlyerFlipper.UI.Views.Processors.RotateSettingsView"
+             x:DataType="vm:RotateSettingsViewModel">
+
+  <StackPanel Spacing="6" Margin="0,8,0,0">
+    <CheckBox Content="Rotate image" IsChecked="{Binding Enabled}"/>
+
+    <!--
+      IsChecked is one-way and the angle is set through the command, so restoring a saved angle moves
+      the selection without the radio buttons writing back over it.
+    -->
+    <StackPanel Margin="20,0,0,0" Spacing="4" IsEnabled="{Binding Enabled}">
+      <RadioButton GroupName="RotateAngle" Content="None"
+                   IsChecked="{Binding IsNone, Mode=OneWay}"
+                   Command="{Binding SetAngleCommand}"
+                   CommandParameter="{x:Static proc:RotationAngle.None}"/>
+      <RadioButton GroupName="RotateAngle" Content="90° clockwise"
+                   IsChecked="{Binding Is90, Mode=OneWay}"
+                   Command="{Binding SetAngleCommand}"
+                   CommandParameter="{x:Static proc:RotationAngle.Clockwise90}"/>
+      <RadioButton GroupName="RotateAngle" Content="180°"
+                   IsChecked="{Binding Is180, Mode=OneWay}"
+                   Command="{Binding SetAngleCommand}"
+                   CommandParameter="{x:Static proc:RotationAngle.Clockwise180}"/>
+      <RadioButton GroupName="RotateAngle" Content="270° clockwise (90° anticlockwise)"
+                   IsChecked="{Binding Is270, Mode=OneWay}"
+                   Command="{Binding SetAngleCommand}"
+                   CommandParameter="{x:Static proc:RotationAngle.Clockwise270}"/>
+    </StackPanel>
+
+    <TextBlock Text="A quarter turn swaps the image's width and height."
+               Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+  </StackPanel>
+
+</UserControl>

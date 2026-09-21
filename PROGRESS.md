@@ -17,7 +17,10 @@ This is a session-resume checkpoint. Read this first (then `PLAN.md`) to pick up
 **Slice 5 (processor tabs + grayscale + resize + image scaling): DONE — approved** (commit `086a335`). Design choices: PLAN.md decision 15.
 **Slice 6 (settings persistence): DONE — approved** (commit `69d1396`). Design choices: PLAN.md decision 16.
 **Slice 7 (polish + Linux verification): DONE — MVP ACCEPTED by the user 2026-09-20.**
-**Slice 8 (custom window chrome): IN PROGRESS** — implemented and green, at the manual STOP gate.
+**Slice 8 (custom window chrome): COMMITTED** (`ad63d1e`) — green on both platforms and committed by
+the user, but the hands-on pass (drag, the eight resize grips, maximize by button and by double-click,
+minimize, close, frame comparison) has **not been reported back**. Slice 8 was added *after* MVP
+acceptance, so nothing here blocks the MVP.
 
 Old Slice 7 status line, kept for the record:
 **Slice 7 (polish + Linux verification): WAS IN PROGRESS** (started 2026-09-18; resumed 2026-09-20). Linux environment: **WSL2** (user's choice), Ubuntu 26.04.1. Automated verification is **green on both platforms** — 275/275 tests on Windows and Linux, clean AOT publish for `win-x64` and `linux-x64`. The user's first Linux smoke test found two real defects (theme, window placement); both are **fixed and verified**, and it is back with the user for re-verification and MVP acceptance.
@@ -499,31 +502,20 @@ dotnet run --project src/FlyerFlipper.App
 
 Scope per `PLAN.md § Slice 7`: polish + Linux verification + MVP acceptance.
 
-### Uncommitted work in the tree (as of 2026-09-20)
+### Commit state (as of 2026-09-20)
 
-**Slice 7 is committed.** The user committed it on 2026-09-20 as three commits:
-`cd505b0` (theme), `53b848d` (window placement), `0b87c0c` (final cleanup). `HEAD` is `0b87c0c`.
+**Everything is committed and pushed. The working tree is clean and `main` matches `origin/main`.**
 
-The tree now holds **Slice 8 only** (custom window chrome), written to disk and not committed:
+| Commit | What |
+|---|---|
+| `cd505b0` | Force dark theme on Linux when the OS reports none |
+| `53b848d` | Window placement fixes |
+| `0b87c0c` | Final cleanup — end of Slice 7 (**MVP accepted here**) |
+| `ad63d1e` | Custom window chrome — Slice 8 |
 
-```
- M PLAN.md
- M PROGRESS.md
- M src/FlyerFlipper.UI/Views/MainWindow.axaml
- M src/FlyerFlipper.UI/Views/MainWindow.axaml.cs
-?? src/FlyerFlipper.UI/Chrome/
-?? src/FlyerFlipper.UI/Views/CaptionBar.axaml
-?? src/FlyerFlipper.UI/Views/CaptionBar.axaml.cs
-?? tests/FlyerFlipper.Tests/Chrome/
-?? tests/FlyerFlipper.Tests/Headless/CaptionBarTests.cs
-```
-
-It is green on both platforms (295/295, clean AOT publishes) but **not yet verified by hand** — see
-the Slice 8 section at the end of this file. Committing is the user's call, as always.
-
-> Check this list with **Windows** `git status`, not with git inside WSL. The repo lives on `/mnt/d`
-> and is checked out CRLF, but WSL's git has its own `core.autocrlf` setting, so from the distro it
-> also reports `.gitignore`, `LICENSE`, `README.md` and `flyer_flipper.sln` as modified. They are not.
+> Check state with **Windows** `git status`, not with git inside WSL. The repo lives on `/mnt/d` and is
+> checked out CRLF, but WSL's git has its own `core.autocrlf` setting, so from the distro it reports
+> `.gitignore`, `LICENSE`, `README.md` and `flyer_flipper.sln` as modified. They are not.
 
 ### Linux environment
 
@@ -842,10 +834,9 @@ formal MVP acceptance. Do not start new work until they report back.
 2. Read the memory index at `C:\Users\jacob\.claude\projects\D--001-source\memory\MEMORY.md`.
    The per-slice manual verification gate (`feedback_per_slice_manual_verification.md`) governs how
    Slice 7 ends: hand off, then STOP for the user's MVP acceptance.
-3. Slices 1–7 are approved and committed (`HEAD` = `0b87c0c`); the MVP was accepted on 2026-09-20.
-   **Slice 8 (custom window chrome) is in the tree, uncommitted, awaiting manual verification** — see
-   the "Uncommitted work" block above and the Slice 8 section at the end, and confirm `git status`
-   matches before doing anything else.
+3. Slices 1–8 are committed and pushed (`HEAD` = `ad63d1e`); the MVP was accepted on 2026-09-20 at the
+   end of Slice 7. The tree is clean. Slice 8's hands-on verification pass was never reported back —
+   ask about it before assuming it passed.
 4. Re-establish the baseline on Windows: `dotnet test -c Release` should report **295/295**.
 5. The Linux toolchain is fully set up. To confirm it survived a WSL restart:
 
@@ -952,13 +943,136 @@ growing into place — plausibly worse, and squarely a workaround for one compos
 on a real Linux desktop before spending anything more on it; a different compositor may not draw the
 shadow at all, and Windows does not.
 
+### Resize-grip cursors on Linux — environmental, not fixable in the app
+
+The user confirmed the grips **resize correctly on both platforms**, but on Linux no resize cursor
+appears on hover. Because there is no OS frame any more, nothing else hints that an edge is grabbable.
+
+First hypothesis (**wrong**): a missing cursor theme. It fitted the edges neatly — Avalonia.X11 holds no
+cursor-name strings, so it calls `XCreateFontCursor` with numeric ids that Xcursor remaps through the
+active theme, and Adwaita ships no `left_side` / `right_side` / `top_side` / `bottom_side`, which is
+exactly what the edge grips asked for. But it never explained the **corners**, whose names
+(`top_left_corner` and friends) Adwaita does ship, and which showed no cursor either.
+
+**Actual cause, established by one check:** hovering the folder-path `TextBox` does not produce an
+I-beam either. That is a stock Avalonia control with a built-in cursor, nothing to do with this slice.
+**No cursor change of any kind reaches the display under WSLg.** It composites each Linux window into a
+Windows window and does not propagate X cursor changes. Nothing in the app can affect this, and no apt
+package helps — `adwaita-icon-theme` and `libxcursor1` were already installed and the theme resolves.
+Had theme lookup been the problem, X would fall back to its built-in cursor font and show *different*
+shapes, not no change at all.
+
+While chasing the wrong hypothesis the edge grips were switched to `SizeWestEast` / `SizeNorthSouth`,
+with a test pinning all eight cursors. **Both were reverted at the user's request** once the real cause
+was known: the change fixed nothing observable — Windows renders the two shapes identically and Linux
+shows neither — so it was a diff with no demonstrated effect. The grips keep the `TopSide` / `LeftSide`
+/ `RightSide` / `BottomSide` shapes they shipped with in `ad63d1e`.
+
+Worth knowing if this is ever revisited: `Cursor` has no value equality, so two cursors built from the
+same `StandardCursorType` compare unequal — a test has to compare `ToString()`.
+
+### What WSLg cannot verify
+
+Two Slice 8 defects on Linux both turned out to be WSLg compositor behaviour rather than app bugs:
+the **startup shadow flash** and **absent cursor feedback**. Neither reproduces on Windows, and both
+are plausibly absent on a real Linux desktop.
+
+The conclusion worth carrying forward: **WSLg is good enough to verify the app's logic on Linux —
+rendering, file system, settings, placement round trips — but not its window-manager or compositor
+behaviour.** If chrome fidelity on Linux matters before shipping, it needs a real desktop session: a
+Hyper-V Linux VM, which decision 17 already names as the fallback and which is available on this box.
+
 ### Still to do
 
-- [ ] **Manual verification (STOP — user):** drag by the title bar; resize from all four edges and all
-      four corners; maximize and restore by both the button and a double-click; minimize; close; confirm
+- [x] Resize grips: confirmed working from all edges and corners on both platforms (user, 2026-09-20).
+- [x] Resize cursors on Linux: **not fixable in the app** — WSLg propagates no cursor changes at all
+      (a stock `TextBox` shows no I-beam either). Recorded as an environment limitation.
+- [ ] **Manual verification (STOP — user; committed but never reported back):** drag by the title bar; maximize and restore by both the button and a double-click; minimize; close; confirm
       the frame looks the same on Windows and Linux.
 - [ ] Confirm the residual Linux **startup frame jump is gone** — with no server-side frame the whole
       window is client area, which `Opacity = 0` hides. This was the main reason the slice was wanted.
 - [ ] Confirm the menu bar, keyboard shortcuts, and the viewport still behave under the new root layout.
 - [ ] If the frame jump is gone, revisit whether the pre-show hide still needs a full settle delay on
       Windows (it costs ~150 ms there and buys nothing).
+
+
+---
+
+## Slice 9 — flip and rotate processors (implemented 2026-09-20, awaiting verification)
+
+Per PLAN.md decision 21. First work after MVP acceptance.
+
+The user asked for "another image processing plugin". Built as **in-process processors**, like grayscale
+and resize — the native plugin host (decisions 10–12) is still a future enhancement, and that reading
+was flagged to the user rather than assumed silently.
+
+### What shipped
+
+| Layer | Flip | Rotate |
+|---|---|---|
+| Options | `FlipOptions(Enabled, MirrorHorizontally, MirrorVertically)` | `RotateOptions(enabled, angle)` + `RotationAngle` |
+| Processor | `FlipProcessor` | `RotateProcessor` |
+| UI | `FlipSettingsView` + view model + control provider | same shape, radio buttons |
+| Settings id | `flyerflipper.flip` | `flyerflipper.rotate` |
+
+Nothing had to change in the settings plumbing: `SettingsCoordinator` takes `IEnumerable<IImageProcessor>`
+and filters to the configurable ones, so both persist automatically (decision 16 paying off).
+
+### Decisions worth remembering
+
+- **Default pipeline order is grayscale → flip → rotate → resize** — a *default*, not a guarantee.
+  Geometry before resize means the resize box applies to the final orientation rather than being undone
+  by a later quarter turn swapping the sides; flip before rotate because the two do not commute and a
+  default has to pick one. `DefaultOrder_PutsGeometryBeforeResize` pins the shipped values.
+  **Correction (user, 2026-09-20):** the first version of the rotate tab said "Rotation is applied
+  before shrink-to-fit, so the size limits apply to the final orientation", which presents a default as
+  a property of the app. Reordering the pipeline is a planned enhancement, and a different order
+  produces real, sometimes desirable, visual results — resize-then-rotate is a legitimate thing to want.
+  That sentence was removed, and the doc comments on `ProcessorOrder` and `RotateOptions` now say
+  "default" explicitly. **No UI text should imply the order is fixed.**
+- **UI wording avoids "flip horizontal"**, which is read both ways — as the mirror line or as the
+  direction pixels move. The checkboxes say "Mirror left ↔ right" and "Mirror top ↕ bottom".
+- **The rotation angle is validated, not merely typed.** `System.Text.Json` deserializes *any* number
+  into an enum, so a settings file reading `"angle": 42` would otherwise have produced a real 42°
+  rotation with clipped corners — the `switch` in `Process` has no arm for it, and `RotateDegrees(42)`
+  would still have run. `RotateOptions` now rejects undefined values in its constructor, which
+  `TryUpdateFromJson` already turns into a clean "rejected, settings unchanged". Found by a test written
+  to assert the rejection; it failed, which is how the hole surfaced.
+- Angles serialize as **names** (`"Clockwise270"`), via `UseStringEnumConverter` to match
+  `AppSettingsJsonContext`. A hand-edited settings file stays readable and reordering the enum cannot
+  silently change what a saved file means.
+- Both processors suppress `SettingsChanged` when a change cannot alter output — toggling an axis while
+  flipping is off, or changing the angle while rotation is off — so the folder is not reprocessed for
+  nothing. Same pattern as `ResizeProcessor`.
+
+### Test harness drift, fixed
+
+`AppHarness` claims to compose "the real services and view models (as `Program.cs` does)", but it had its
+own processor list, so the new tabs would have had **no UI coverage at all** while the headless tests
+still looked green. Added flip and rotate to the harness's pipeline and tab host, deliberately
+registering the providers out of order so the host's `Order` sort is exercised.
+
+Six existing tests then failed because they hard-coded `["Grayscale", "Resize"]` and tab **index 1**.
+They now select tabs **by name**, so the next processor does not break them again.
+
+### Verified
+
+| | Windows | Linux |
+|---|---|---|
+| Tests | **329/329** | **329/329** |
+| AOT publish | clean, no warnings | clean, no warnings |
+
+25 new tests. `GeometryProcessorTests` builds an image whose every pixel encodes its own coordinates, so
+the assertions pin exactly where each pixel lands — not merely that the output is the right size. They
+cover both mirror axes, all three angles, that a quarter turn swaps width and height, that flipping both
+axes equals a 180° turn, and that four 90° turns return the original.
+
+### Still to do
+
+- [ ] **Manual verification (STOP — user):** exercise both tabs on a real folder. Confirm the rotation
+      direction matches expectations, the flip axes are the right way round, a quarter turn visibly swaps
+      the image's dimensions, and both settings survive a restart.
+- [ ] Sanity-check the interaction with resize: rotate 90° with shrink-to-fit on and a non-square box
+      (e.g. 800×400) and confirm the result respects the box in its final orientation — i.e. that the
+      default order behaves as intended.
+- [ ] Confirm no remaining UI text implies the pipeline order is fixed.

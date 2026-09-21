@@ -38,6 +38,14 @@ internal static class Program
         builder.Services.AddSingleton<IImageProcessor, GrayscaleProcessor>();
         builder.Services.AddSingleton<IProcessorControlProvider, GrayscaleControlProvider>();
 
+        builder.Services.AddSingleton(new ProcessorSettings<FlipOptions>(new FlipOptions()));
+        builder.Services.AddSingleton<IImageProcessor, FlipProcessor>();
+        builder.Services.AddSingleton<IProcessorControlProvider, FlipControlProvider>();
+
+        builder.Services.AddSingleton(new ProcessorSettings<RotateOptions>(new RotateOptions()));
+        builder.Services.AddSingleton<IImageProcessor, RotateProcessor>();
+        builder.Services.AddSingleton<IProcessorControlProvider, RotateControlProvider>();
+
         builder.Services.AddSingleton(new ProcessorSettings<ResizeOptions>(new ResizeOptions()));
         builder.Services.AddSingleton<IImageProcessor, ResizeProcessor>();
         builder.Services.AddSingleton<IProcessorControlProvider, ResizeControlProvider>();
