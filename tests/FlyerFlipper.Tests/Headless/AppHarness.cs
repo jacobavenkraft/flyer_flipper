@@ -40,11 +40,12 @@ internal sealed class AppHarness : IDisposable
         Layout = new LayoutModeService();
         Viewport = new ViewportModeService(Catalog);
         ChannelMap = new ChannelMapProcessor(ChannelMapSettings);
+        Invert = new InvertProcessor(InvertSettings);
         Grayscale = new GrayscaleProcessor(GrayscaleSettings);
         Flip = new FlipProcessor(FlipSettings);
         Rotate = new RotateProcessor(RotateSettings);
         Resize = new ResizeProcessor(ResizeSettings);
-        Pipeline = new ImageProcessingPipeline([ChannelMap, Grayscale, Flip, Rotate, Resize]);
+        Pipeline = new ImageProcessingPipeline([ChannelMap, Invert, Grayscale, Flip, Rotate, Resize]);
         Store = new ImageStore<Bitmap>(Catalog, Viewport, Loader, Pipeline, new SkiaThumbnailService(), new AvaloniaBitmapFactory());
         ImageSource = new ImageSourceViewModel(Catalog);
         Grid = new ThumbnailGridViewModel(Store, Layout, Viewport);
@@ -53,6 +54,7 @@ internal sealed class AppHarness : IDisposable
         ProcessorTabs = new ProcessorTabHostViewModel([
             new ResizeControlProvider(ResizeSettings),
             new ChannelMapControlProvider(ChannelMapSettings),
+            new InvertControlProvider(InvertSettings),
             new RotateControlProvider(RotateSettings),
             new GrayscaleControlProvider(GrayscaleSettings),
             new FlipControlProvider(FlipSettings),
@@ -66,6 +68,8 @@ internal sealed class AppHarness : IDisposable
 
     public ProcessorSettings<ChannelMapOptions> ChannelMapSettings { get; } = new(new ChannelMapOptions());
 
+    public ProcessorSettings<InvertOptions> InvertSettings { get; } = new(new InvertOptions());
+
     public ProcessorSettings<FlipOptions> FlipSettings { get; } = new(new FlipOptions());
 
     public ProcessorSettings<RotateOptions> RotateSettings { get; } = new(new RotateOptions());
@@ -75,6 +79,8 @@ internal sealed class AppHarness : IDisposable
     public ResizeProcessor Resize { get; }
 
     public ChannelMapProcessor ChannelMap { get; }
+
+    public InvertProcessor Invert { get; }
 
     public FlipProcessor Flip { get; }
 

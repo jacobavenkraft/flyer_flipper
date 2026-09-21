@@ -35,8 +35,8 @@ public class ProcessorTabsUiTests
 
         // Order comes from ProcessorOrder, not registration order. This is the shipped default;
         // reordering the pipeline is a planned enhancement.
-        Assert.Equal(["Channels", "Grayscale", "Flip", "Rotate", "Resize"], app.ProcessorTabs.Tabs.Select(t => t.Header));
-        Assert.Equal(5, tabControl.ItemCount);
+        Assert.Equal(["Channels", "Invert", "Grayscale", "Flip", "Rotate", "Resize"], app.ProcessorTabs.Tabs.Select(t => t.Header));
+        Assert.Equal(6, tabControl.ItemCount);
         var folderBox = window.GetVisualDescendants().OfType<TextBox>().Single(t => t.Name == "FolderPathInput");
         Assert.True(folderBox.TranslatePoint(default, window)!.Value.Y < tabControl.TranslatePoint(default, window)!.Value.Y);
     }
@@ -54,6 +54,20 @@ public class ProcessorTabsUiTests
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(app.GrayscaleSettings.Current.Enabled);
+    }
+
+    [AvaloniaFact]
+    public void InvertCheckbox_AppliesImmediately()
+    {
+        using var app = new AppHarness();
+        var window = app.ShowWindow();
+        Assert.True(app.ProcessorTabs.SelectTab("Invert"));
+        Dispatcher.UIThread.RunJobs();
+
+        window.GetVisualDescendants().OfType<CheckBox>().Single(c => Equals(c.Content, "Invert colours")).IsChecked = true;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(app.InvertSettings.Current.Enabled);
     }
 
     [AvaloniaFact]

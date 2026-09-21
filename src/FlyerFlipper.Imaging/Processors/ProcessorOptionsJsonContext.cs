@@ -9,6 +9,7 @@ namespace FlyerFlipper.Imaging.Processors;
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(GrayscaleOptions))]
 [JsonSerializable(typeof(ChannelMapOptions))]
+[JsonSerializable(typeof(InvertOptions))]
 [JsonSerializable(typeof(ResizeOptions))]
 [JsonSerializable(typeof(FlipOptions))]
 [JsonSerializable(typeof(RotateOptions))]

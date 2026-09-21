@@ -1141,3 +1141,44 @@ names, and rejection of out-of-range channel numbers.
 - [ ] **Manual verification (STOP — user):** exercise the Channels tab on a real folder — swaps look
       right, one source can feed all three, settings survive a restart.
 - [ ] Confirm the tab order change (Channels first) is acceptable.
+
+
+---
+
+## Slice 11 — invert processor (implemented 2026-09-20, awaiting verification)
+
+Per PLAN.md decision 23. An "Invert" tab with one checkbox. Default order **75**, after the channel map
+and before grayscale, exactly as the user specified — so it inverts the channels the user chose, and
+grayscale weighs the inverted result.
+
+### The one thing that is not obvious: alpha − value, not 255 − value
+
+The buffers are BGRA **premultiplied**, so a stored channel holds <c>colour × alpha</c>. Inverting the
+colour to <c>1 − colour</c> therefore stores <c>(1 − colour) × alpha</c> = <c>alpha − stored</c>.
+
+`255 − stored` is right only when alpha is 255. Anywhere else it produces a colour channel **larger than
+its own alpha**, which is not a valid premultiplied pixel and renders as a bright halo around anything
+partially transparent. For a pixel with alpha 17 and channels (3, 7, 11) the correct result is
+(14, 10, 6); the naive form gives (252, 248, 244).
+
+Three tests pin this: the alpha-17 case by value, a sweep asserting no channel ever exceeds its own alpha
+across the whole 0–255 alpha range, and invert-twice returning the original. A fully transparent pixel is
+left alone, since alpha and stored value are both zero.
+
+Same reasoning as the channel map for avoiding an `SKColorFilter` matrix: Skia would unpremultiply and
+re-premultiply around the operation, rounding every partially transparent pixel.
+
+### Verified
+
+| | Windows | Linux |
+|---|---|---|
+| Tests | **366/366** | **366/366** |
+| AOT publish | clean, no warnings | clean, no warnings |
+
+13 new tests. Tabs are now **Channels · Invert · Grayscale · Flip · Rotate · Resize**.
+
+### Still to do
+
+- [ ] **Manual verification (STOP — user):** inverted images look right, inverting twice returns the
+      original, the setting survives a restart. Worth a PNG with transparency if one is handy — that is
+      where the premultiplied arithmetic shows.

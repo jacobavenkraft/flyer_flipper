@@ -15,12 +15,15 @@ namespace FlyerFlipper.Core.Processors;
 /// <see cref="Flip"/> before <see cref="Rotate"/> because the two do not commute, and a default has to
 /// pick one. <see cref="ChannelMap"/> before <see cref="Grayscale"/> so the two compose: rearranging
 /// channels first changes which colours dominate the resulting luma, whereas after grayscale every
-/// channel is already equal and moving them around would do nothing at all.
+/// channel is already equal and moving them around would do nothing at all. <see cref="Invert"/> sits
+/// between the two, so it inverts the channels the user chose and its result is what grayscale weighs.
 /// </para>
 /// </remarks>
 public static class ProcessorOrder
 {
     public const int ChannelMap = 50;
+
+    public const int Invert = 75;
 
     public const int Grayscale = 100;
 

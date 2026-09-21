@@ -38,6 +38,10 @@ internal static class Program
         builder.Services.AddSingleton<IImageProcessor, ChannelMapProcessor>();
         builder.Services.AddSingleton<IProcessorControlProvider, ChannelMapControlProvider>();
 
+        builder.Services.AddSingleton(new ProcessorSettings<InvertOptions>(new InvertOptions()));
+        builder.Services.AddSingleton<IImageProcessor, InvertProcessor>();
+        builder.Services.AddSingleton<IProcessorControlProvider, InvertControlProvider>();
+
         builder.Services.AddSingleton(new ProcessorSettings<GrayscaleOptions>(new GrayscaleOptions()));
         builder.Services.AddSingleton<IImageProcessor, GrayscaleProcessor>();
         builder.Services.AddSingleton<IProcessorControlProvider, GrayscaleControlProvider>();
